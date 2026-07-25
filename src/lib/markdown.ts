@@ -1,0 +1,167 @@
+/**
+ * A small markdown parser shared by the editor preview and the PDF/Word
+ * exporters, so a note reads the same everywhere and no syntax leaks into an
+ * exported document. Deliberately limited to what the editor's toolbar can
+ * produce: headings, lists, quotes, fenced code, rules and inline emphasis.
+ */
+
+export type Inline =
+  | { type: "text"; value: string }
+  | { type: "bold"; value: string }
+  | { type: "italic"; value: string }
+  | { type: "code"; value: string }
+  | { type: "link"; value: string; href: string };
+
+export type Block =
+  | { type: "heading"; level: 1 | 2 | 3; content: Inline[] }
+  | { type: "paragraph"; content: Inline[] }
+  | { type: "bullet"; content: Inline[]; ordered: false }
+  | { type: "bullet"; content: Inline[]; ordered: true; marker: string }
+  | { type: "quote"; content: Inline[] }
+  | { type: "code"; value: string }
+  | { type: "rule" };
+
+const INLINE_PATTERN =
+  /(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(`[^`\n]+`)|(\[[^\]\n]+\]\([^)\s]+\))/;
+
+export function parseInline(text: string): Inline[] {
+  const out: Inline[] = [];
+  let rest = text;
+
+  while (rest) {
+    const match = INLINE_PATTERN.exec(rest);
+    if (!match || match.index === undefined) break;
+
+    if (match.index > 0) {
+      out.push({ type: "text", value: rest.slice(0, match.index) });
+    }
+
+    const token = match[0];
+    if (token.startsWith("**")) {
+      out.push({ type: "bold", value: token.slice(2, -2) });
+    } else if (token.startsWith("`")) {
+      out.push({ type: "code", value: token.slice(1, -1) });
+    } else if (token.startsWith("[")) {
+      const [, label, href] = /\[([^\]]+)\]\(([^)\s]+)\)/.exec(token) ?? [];
+      out.push({ type: "link", value: label ?? token, href: href ?? "" });
+    } else {
+      out.push({ type: "italic", value: token.slice(1, -1) });
+    }
+
+    rest = rest.slice(match.index + token.length);
+  }
+
+  if (rest) out.push({ type: "text", value: rest });
+  return out.length ? out : [{ type: "text", value: text }];
+}
+
+export function parseMarkdown(source: string): Block[] {
+  const lines = source.split("\n");
+  const blocks: Block[] = [];
+
+  let paragraph: string[] = [];
+  let code: string[] | null = null;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    blocks.push({ type: "paragraph", content: parseInline(paragraph.join(" ")) });
+    paragraph = [];
+  };
+
+  for (const line of lines) {
+    // Fenced code runs verbatim until the closing fence.
+    if (line.trimStart().startsWith("```")) {
+      if (code) {
+        blocks.push({ type: "code", value: code.join("\n") });
+        code = null;
+      } else {
+        flushParagraph();
+        code = [];
+      }
+      continue;
+    }
+    if (code) {
+      code.push(line);
+      continue;
+    }
+
+    if (!line.trim()) {
+      flushParagraph();
+      continue;
+    }
+
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (heading) {
+      flushParagraph();
+      blocks.push({
+        type: "heading",
+        level: heading[1].length as 1 | 2 | 3,
+        content: parseInline(heading[2]),
+      });
+      continue;
+    }
+
+    if (/^\s*([-*_])\s*\1\s*\1[\s\S]*$/.test(line.trim()) && line.trim().length >= 3) {
+      flushParagraph();
+      blocks.push({ type: "rule" });
+      continue;
+    }
+
+    const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
+    if (bullet) {
+      flushParagraph();
+      blocks.push({ type: "bullet", ordered: false, content: parseInline(bullet[1]) });
+      continue;
+    }
+
+    const ordered = /^\s*(\d+)[.)]\s+(.*)$/.exec(line);
+    if (ordered) {
+      flushParagraph();
+      blocks.push({
+        type: "bullet",
+        ordered: true,
+        marker: `${ordered[1]}.`,
+        content: parseInline(ordered[2]),
+      });
+      continue;
+    }
+
+    const quote = /^\s*>\s?(.*)$/.exec(line);
+    if (quote) {
+      flushParagraph();
+      blocks.push({ type: "quote", content: parseInline(quote[1]) });
+      continue;
+    }
+
+    paragraph.push(line.trim());
+  }
+
+  if (code) blocks.push({ type: "code", value: code.join("\n") });
+  flushParagraph();
+
+  return blocks;
+}
+
+/** Inline nodes flattened back to plain text, for PDF drawing. */
+export function inlineToText(content: Inline[]) {
+  return content.map((node) => node.value).join("");
+}
+
+/**
+ * What a new line should start with when Enter is pressed inside a list, so
+ * lists keep going the way they do in every other editor. Returns null when the
+ * line is not a list item, and "" when an empty item should end the list.
+ */
+export function continuationFor(line: string): string | null {
+  const bullet = /^(\s*)([-*+])\s+(.*)$/.exec(line);
+  if (bullet) return bullet[3].trim() ? `${bullet[1]}${bullet[2]} ` : "";
+
+  const ordered = /^(\s*)(\d+)([.)])\s+(.*)$/.exec(line);
+  if (ordered) {
+    return ordered[4].trim()
+      ? `${ordered[1]}${Number(ordered[2]) + 1}${ordered[3]} `
+      : "";
+  }
+
+  return null;
+}

@@ -25,11 +25,34 @@ type NotesState = {
   toggleSidebar: () => void;
   setDrawerOpen: (open: boolean) => void;
 
+  /** Multi-select for bulk actions. */
+  selectMode: boolean;
+  selectedIds: Set<string>;
+
   createNote: (category?: string, tags?: string[]) => Promise<string | null>;
   updateNote: (id: string, patch: Partial<Note>) => void;
   duplicateNote: (id: string) => Promise<void>;
-  deleteNote: (id: string) => Promise<void>;
+  deleteNote: (id: string, permanent?: boolean) => Promise<void>;
+  restoreNote: (id: string) => void;
+
+  toggleSelected: (id: string) => void;
+  setSelectedIds: (ids: Set<string>) => void;
+  clearSelection: () => void;
+  setSelectMode: (enabled: boolean) => void;
+  bulk: (action: BulkAction, ids: string[]) => Promise<void>;
 };
+
+export type BulkAction =
+  | "archive"
+  | "unarchive"
+  | "favorite"
+  | "unfavorite"
+  | "pin"
+  | "unpin"
+  | "trash"
+  | "restore"
+  | "purge"
+  | "emptyTrash";
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -62,6 +85,8 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   view: "list",
   sidebarOpen: true,
   drawerOpen: false,
+  selectMode: false,
+  selectedIds: new Set<string>(),
 
   async load() {
     set({ status: "loading" });
@@ -134,14 +159,99 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     set((state) => ({ notes: [note, ...state.notes], selectedId: note.id }));
   },
 
-  async deleteNote(id) {
+  /** Moves the note to the trash; `permanent` removes the row for good. */
+  async deleteNote(id, permanent = false) {
     const previous = get().notes;
+    const stamp = new Date().toISOString();
+
     set((state) => ({
-      notes: state.notes.filter((note) => note.id !== id),
+      notes: permanent
+        ? state.notes.filter((note) => note.id !== id)
+        : state.notes.map((note) =>
+            note.id === id ? { ...note, deletedAt: stamp } : note,
+          ),
       selectedId: state.selectedId === id ? null : state.selectedId,
     }));
 
-    const response = await fetch(`/api/notes/${id}`, { method: "DELETE" });
+    const response = await fetch(
+      `/api/notes/${id}${permanent ? "?permanent=true" : ""}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) set({ notes: previous });
+  },
+
+  restoreNote(id) {
+    set((state) => ({
+      notes: state.notes.map((note) =>
+        note.id === id ? { ...note, deletedAt: null } : note,
+      ),
+    }));
+    void fetch(`/api/notes/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deletedAt: null }),
+    });
+  },
+
+  toggleSelected(id) {
+    set((state) => {
+      const next = new Set(state.selectedIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { selectedIds: next };
+    });
+  },
+
+  setSelectedIds: (selectedIds) => set({ selectedIds }),
+  clearSelection: () => set({ selectedIds: new Set(), selectMode: false }),
+  setSelectMode: (selectMode) =>
+    set(selectMode ? { selectMode } : { selectMode, selectedIds: new Set() }),
+
+  async bulk(action, ids) {
+    const previous = get().notes;
+
+    // Reflect the change immediately, then reconcile with the server.
+    set((state) => ({
+      notes: state.notes
+        .map((note) => {
+          if (action !== "emptyTrash" && !ids.includes(note.id)) return note;
+          switch (action) {
+            case "archive":
+              return { ...note, archived: true };
+            case "unarchive":
+              return { ...note, archived: false };
+            case "favorite":
+              return { ...note, favorite: true };
+            case "unfavorite":
+              return { ...note, favorite: false };
+            case "pin":
+              return { ...note, pinned: true };
+            case "unpin":
+              return { ...note, pinned: false };
+            case "trash":
+              return { ...note, deletedAt: new Date().toISOString() };
+            case "restore":
+              return { ...note, deletedAt: null };
+            default:
+              return note;
+          }
+        })
+        .filter((note) =>
+          action === "purge"
+            ? !ids.includes(note.id)
+            : action === "emptyTrash"
+              ? !note.deletedAt
+              : true,
+        ),
+      selectedIds: new Set(),
+      selectMode: false,
+    }));
+
+    const response = await fetch("/api/notes/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ids }),
+    });
     if (!response.ok) set({ notes: previous });
   },
 }));
@@ -258,4 +368,8 @@ export function selectPinnedCount(state: NotesState) {
   return state.notes.filter(
     (note) => note.pinned && !note.archived && !note.deletedAt,
   ).length;
+}
+
+export function selectTrashedCount(state: NotesState) {
+  return state.notes.filter((note) => note.deletedAt).length;
 }

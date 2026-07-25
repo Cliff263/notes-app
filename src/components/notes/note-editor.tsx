@@ -4,24 +4,36 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Archive,
   ArchiveRestore,
+  Bold,
   ChevronLeft,
   ChevronRight,
+  Code,
   Copy,
   Download,
+  Eye,
   FileText,
   FileType,
   Hash,
   Hash as HashIcon,
+  Heading2,
+  Italic,
+  Link as LinkIcon,
+  List as ListIcon,
+  ListOrdered,
   MoreHorizontal,
+  PenLine,
   Pin,
+  Quote,
   Star,
   Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { continuationFor } from "@/lib/markdown";
 import { CATEGORIES, type ExportFormat, type Note } from "@/lib/types";
 import { useBreakpoint } from "@/lib/use-media-query";
-import { cn, longDateTime, wordCount } from "@/lib/utils";
+import { cn, longDateTime, readingTime, wordCount } from "@/lib/utils";
+import { MarkdownPreview } from "./markdown-preview";
 import { useNotesStore } from "@/store/notes-store";
 
 export function NoteEditor() {
@@ -90,7 +102,74 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const [tagDraft, setTagDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [mode, setMode] = useState<"write" | "preview">("write");
   const menuRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /** Wraps the selection, or drops the markers in place for typing between. */
+  function wrapSelection(before: string, after: string) {
+    const field = textareaRef.current;
+    if (!field) return;
+
+    const { selectionStart: start, selectionEnd: end, value } = field;
+    const selected = value.slice(start, end);
+    const next = `${value.slice(0, start)}${before}${selected}${after}${value.slice(end)}`;
+
+    updateNote(note.id, { content: next });
+    requestAnimationFrame(() => {
+      field.focus();
+      field.setSelectionRange(start + before.length, start + before.length + selected.length);
+    });
+  }
+
+  /** Adds (or removes) a line prefix on every line the selection touches. */
+  function prefixLine(prefix: string) {
+    const field = textareaRef.current;
+    if (!field) return;
+
+    const { selectionStart: start, selectionEnd: end, value } = field;
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+    const lineEnd = value.indexOf("\n", end) === -1 ? value.length : value.indexOf("\n", end);
+
+    const block = value.slice(lineStart, lineEnd);
+    const already = block.split("\n").every((line) => line.startsWith(prefix));
+    const updated = block
+      .split("\n")
+      .map((line) => (already ? line.slice(prefix.length) : `${prefix}${line}`))
+      .join("\n");
+
+    updateNote(note.id, {
+      content: `${value.slice(0, lineStart)}${updated}${value.slice(lineEnd)}`,
+    });
+    requestAnimationFrame(() => field.focus());
+  }
+
+  /** Enter inside a list continues it; Enter on an empty item ends it. */
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey) return;
+
+    const field = event.currentTarget;
+    const { selectionStart: caret, value } = field;
+    const lineStart = value.lastIndexOf("\n", caret - 1) + 1;
+    const line = value.slice(lineStart, caret);
+
+    const continuation = continuationFor(line);
+    if (continuation === null) return;
+
+    event.preventDefault();
+    const next =
+      continuation === ""
+        ? `${value.slice(0, lineStart)}\n${value.slice(caret)}`
+        : `${value.slice(0, caret)}\n${continuation}${value.slice(caret)}`;
+    const caretAfter =
+      continuation === "" ? lineStart + 1 : caret + 1 + continuation.length;
+
+    updateNote(note.id, { content: next });
+    requestAnimationFrame(() => {
+      field.focus();
+      field.setSelectionRange(caretAfter, caretAfter);
+    });
+  }
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -332,20 +411,105 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
         />
       </div>
 
-      <p className="px-4 pt-3 text-[11px] text-muted-2">
-        Updated {longDateTime(note.updatedAt)} · {wordCount(note.content)} words
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3">
+        <p className="text-[11px] text-muted-2">
+          Updated {longDateTime(note.updatedAt)} · {wordCount(note.content)} words ·{" "}
+          {readingTime(note.content)} min read
+        </p>
 
-      <div className="mt-3 min-h-0 flex-1 border-t border-line">
-        <textarea
-          value={note.content}
-          onChange={(event) => updateNote(note.id, { content: event.target.value })}
-          placeholder="Start writing..."
-          spellCheck={false}
-          className="h-full w-full resize-none bg-transparent px-4 py-4 text-[13px] leading-[1.75] text-foreground scroll-thin"
-        />
+        <div className="flex items-center gap-1 rounded-lg border border-line p-0.5">
+          {(["write", "preview"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setMode(value)}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] capitalize transition",
+                mode === value
+                  ? "bg-card text-foreground"
+                  : "text-muted-2 hover:text-foreground",
+              )}
+            >
+              {value === "write" ? (
+                <PenLine className="size-3" />
+              ) : (
+                <Eye className="size-3" />
+              )}
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {mode === "write" && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-0.5 border-t border-line px-3 pt-2">
+          <FormatButton label="Bold" onClick={() => wrapSelection("**", "**")}>
+            <Bold className="size-3.5" />
+          </FormatButton>
+          <FormatButton label="Italic" onClick={() => wrapSelection("*", "*")}>
+            <Italic className="size-3.5" />
+          </FormatButton>
+          <FormatButton label="Heading" onClick={() => prefixLine("## ")}>
+            <Heading2 className="size-3.5" />
+          </FormatButton>
+          <FormatButton label="Bulleted list" onClick={() => prefixLine("- ")}>
+            <ListIcon className="size-3.5" />
+          </FormatButton>
+          <FormatButton label="Numbered list" onClick={() => prefixLine("1. ")}>
+            <ListOrdered className="size-3.5" />
+          </FormatButton>
+          <FormatButton label="Quote" onClick={() => prefixLine("> ")}>
+            <Quote className="size-3.5" />
+          </FormatButton>
+          <FormatButton label="Code" onClick={() => wrapSelection("`", "`")}>
+            <Code className="size-3.5" />
+          </FormatButton>
+          <FormatButton label="Link" onClick={() => wrapSelection("[", "](url)")}>
+            <LinkIcon className="size-3.5" />
+          </FormatButton>
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 border-t border-line">
+        {mode === "write" ? (
+          <textarea
+            ref={textareaRef}
+            value={note.content}
+            onChange={(event) => updateNote(note.id, { content: event.target.value })}
+            onKeyDown={handleKeyDown}
+            placeholder="Start writing... markdown works here"
+            spellCheck={false}
+            className="field h-full w-full resize-none bg-transparent px-4 py-4 leading-[1.75] text-foreground scroll-thin"
+          />
+        ) : (
+          <div className="h-full overflow-y-auto px-4 py-4 scroll-thin">
+            <MarkdownPreview source={note.content} />
+          </div>
+        )}
       </div>
     </motion.div>
+  );
+}
+
+function FormatButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="flex size-8 items-center justify-center rounded-md text-muted-2 transition hover:bg-card-hover hover:text-foreground"
+    >
+      {children}
+    </button>
   );
 }
 

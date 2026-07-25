@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { MobileNav } from "@/components/mobile-nav";
 import { MobileTopBar } from "@/components/mobile-top-bar";
 import { Sidebar } from "@/components/sidebar";
+import { SHORTCUTS } from "@/components/shortcuts";
 import { SidebarDrawer } from "@/components/sidebar-drawer";
 import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
@@ -242,6 +243,22 @@ export default function SettingsPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          </Card>
+
+          <Card title="Keyboard shortcuts" delay={0.18}>
+            <div className="-my-1">
+              {SHORTCUTS.map((shortcut) => (
+                <div
+                  key={shortcut.keys}
+                  className="flex items-center justify-between gap-3 border-t border-line py-2 first:border-t-0"
+                >
+                  <span className="text-[12px] text-muted">{shortcut.description}</span>
+                  <kbd className="shrink-0 rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[11px] text-muted-2">
+                    {shortcut.keys}
+                  </kbd>
+                </div>
+              ))}
             </div>
           </Card>
 

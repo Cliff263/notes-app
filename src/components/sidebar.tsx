@@ -16,6 +16,7 @@ import {
   Plus,
   Settings,
   Star,
+  Trash2,
   User,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
@@ -32,6 +33,7 @@ import {
   selectCategoryCounts,
   selectFavoriteCount,
   selectPinnedCount,
+  selectTrashedCount,
   useNotesStore,
 } from "@/store/notes-store";
 
@@ -58,6 +60,7 @@ export function Sidebar() {
   const favoriteCount = useNotesStore(selectFavoriteCount);
   const pinnedCount = useNotesStore(selectPinnedCount);
   const archivedCount = useNotesStore(selectArchivedCount);
+  const trashedCount = useNotesStore(selectTrashedCount);
 
   /** Navigating from the drawer should also dismiss it. */
   const closeDrawer = () => setDrawerOpen(false);
@@ -188,6 +191,13 @@ export function Sidebar() {
                   label="Archive"
                   count={archivedCount}
                   active={pathname === ROUTES.archive}
+                />
+                <NavLink
+                  href={ROUTES.trash}
+                  icon={Trash2}
+                  label="Trash"
+                  count={trashedCount}
+                  active={pathname === ROUTES.trash}
                 />
               </div>
             </motion.div>

@@ -21,6 +21,17 @@ export async function PATCH(request: Request, { params }: Params) {
     if (typeof body.favorite === "boolean") patch.favorite = body.favorite;
     if (typeof body.archived === "boolean") patch.archived = body.archived;
 
+    // null restores from the trash; a string would be a client-set timestamp.
+    if (body.deletedAt === null) patch.deletedAt = null;
+    if (body.dueAt === null) patch.dueAt = null;
+    else if (typeof body.dueAt === "string") {
+      const due = new Date(body.dueAt);
+      if (Number.isNaN(due.getTime())) {
+        return Response.json({ error: "Invalid dueAt" }, { status: 400 });
+      }
+      patch.dueAt = due;
+    }
+
     const [row] = await db
       .update(notes)
       .set(patch)
@@ -35,18 +46,34 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+/**
+ * Deleting moves a note to the trash. `?permanent=true` is the only way to
+ * remove a row for good, which is what "Empty trash" and "Delete forever" use.
+ */
+export async function DELETE(request: Request, { params }: Params) {
   try {
     const userId = await requireUserId();
     const { id } = await params;
+    const permanent = new URL(request.url).searchParams.get("permanent") === "true";
+
+    if (permanent) {
+      const [row] = await db
+        .delete(notes)
+        .where(and(eq(notes.id, id), eq(notes.userId, userId)))
+        .returning({ id: notes.id });
+
+      if (!row) return Response.json({ error: "Note not found" }, { status: 404 });
+      return Response.json({ ok: true, permanent: true });
+    }
 
     const [row] = await db
-      .delete(notes)
+      .update(notes)
+      .set({ deletedAt: new Date() })
       .where(and(eq(notes.id, id), eq(notes.userId, userId)))
-      .returning({ id: notes.id });
+      .returning();
 
     if (!row) return Response.json({ error: "Note not found" }, { status: 404 });
-    return Response.json({ ok: true });
+    return Response.json(serializeNote(row));
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorized();
     throw error;

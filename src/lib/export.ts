@@ -1,5 +1,6 @@
-import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
+import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { inlineToText, parseMarkdown, type Block, type Inline } from "./markdown";
 import type { Note } from "./types";
 import { longDateTime, wordCount } from "./utils";
 
@@ -51,9 +52,98 @@ export function toMarkdown(notes: Note[]) {
 export function toPlainText(notes: Note[]) {
   return notes
     .map((note) =>
-      [note.title || "Untitled note", metaLine(note), "", note.content].join("\n"),
+      [
+        note.title || "Untitled note",
+        metaLine(note),
+        "",
+        // Plain text should not carry markdown markers.
+        parseMarkdown(note.content)
+          .map((block) => {
+            switch (block.type) {
+              case "heading":
+                return `\n${inlineToText(block.content).toUpperCase()}`;
+              case "bullet":
+                return `  ${block.ordered ? block.marker : "-"} ${inlineToText(block.content)}`;
+              case "quote":
+                return `  | ${inlineToText(block.content)}`;
+              case "code":
+                return block.value;
+              case "rule":
+                return "----------";
+              default:
+                return inlineToText(block.content);
+            }
+          })
+          .join("\n"),
+      ].join("\n"),
     )
     .join("\n\n----------------------------------------\n\n");
+}
+
+/** Inline nodes as Word runs, so bold and italic survive the export. */
+function inlineRuns(content: Inline[], size = 22) {
+  return content.map((node) => {
+    switch (node.type) {
+      case "bold":
+        return new TextRun({ text: node.value, size, bold: true });
+      case "italic":
+        return new TextRun({ text: node.value, size, italics: true });
+      case "code":
+        return new TextRun({ text: node.value, size, font: "Consolas" });
+      case "link":
+        return new TextRun({ text: node.value, size, style: "Hyperlink" });
+      default:
+        return new TextRun({ text: node.value, size });
+    }
+  });
+}
+
+function blockToParagraph(block: Block) {
+  switch (block.type) {
+    case "heading":
+      return new Paragraph({
+        children: inlineRuns(block.content, block.level === 1 ? 32 : 26),
+        heading:
+          block.level === 1
+            ? HeadingLevel.HEADING_2
+            : block.level === 2
+              ? HeadingLevel.HEADING_3
+              : HeadingLevel.HEADING_4,
+        spacing: { before: 200, after: 100 },
+      });
+    case "bullet": {
+      // Word owns the bullet glyph; numbered items keep their literal marker.
+      const runs = block.ordered
+        ? [new TextRun({ text: `${block.marker} `, size: 22 }), ...inlineRuns(block.content)]
+        : inlineRuns(block.content);
+
+      return new Paragraph({
+        children: runs,
+        bullet: block.ordered ? undefined : { level: 0 },
+        indent: block.ordered ? { left: 360 } : undefined,
+        spacing: { after: 60 },
+      });
+    }
+    case "quote":
+      return new Paragraph({
+        children: inlineRuns(block.content),
+        indent: { left: 360 },
+        spacing: { after: 80 },
+      });
+    case "code":
+      return new Paragraph({
+        children: [new TextRun({ text: block.value, size: 20, font: "Consolas" })],
+        shading: { fill: "F4F4F5" },
+        spacing: { after: 120 },
+      });
+    case "rule":
+      return new Paragraph({
+        text: "",
+        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "D4D4D8" } },
+      });
+    default:
+      return new Paragraph({ children: inlineRuns(block.content), spacing: { after: 120 } });
+  }
 }
 
 export async function toDocx(notes: Note[], documentTitle: string) {
@@ -68,13 +158,7 @@ export async function toDocx(notes: Note[], documentTitle: string) {
         children: [new TextRun({ text: metaLine(note), size: 18, color: "6B6B76" })],
         spacing: { after: 240 },
       }),
-      ...note.content.split("\n").map(
-        (line) =>
-          new Paragraph({
-            children: [new TextRun({ text: line, size: 22 })],
-            spacing: { after: 80 },
-          }),
-      ),
+      ...parseMarkdown(note.content).map(blockToParagraph),
     ];
 
     // Page break between notes in a bulk export.
@@ -162,7 +246,49 @@ export async function toPdf(notes: Note[]) {
       y -= 18;
     }
 
-    draw(note.content, { size: 11, gap: 5 });
+    // Same parsed blocks the preview uses, so the PDF matches what was written.
+    for (const block of parseMarkdown(note.content)) {
+      switch (block.type) {
+        case "heading":
+          y -= 6;
+          draw(inlineToText(block.content), {
+            font: bold,
+            size: block.level === 1 ? 15 : block.level === 2 ? 13 : 12,
+            gap: 6,
+          });
+          break;
+        case "bullet":
+          draw(`${block.ordered ? block.marker : "•"}  ${inlineToText(block.content)}`, {
+            size: 11,
+            gap: 4,
+          });
+          break;
+        case "quote":
+          draw(`“${inlineToText(block.content)}”`, {
+            size: 11,
+            gap: 5,
+            color: rgb(0.35, 0.35, 0.4),
+          });
+          break;
+        case "code":
+          draw(block.value, { size: 10, gap: 3, color: rgb(0.25, 0.25, 0.3) });
+          break;
+        case "rule":
+          if (y - 12 > MARGIN) {
+            page.drawLine({
+              start: { x: MARGIN, y: y - 4 },
+              end: { x: PAGE.width - MARGIN, y: y - 4 },
+              thickness: 0.6,
+              color: rgb(0.88, 0.88, 0.9),
+            });
+            y -= 14;
+          }
+          break;
+        default:
+          draw(inlineToText(block.content), { size: 11, gap: 5 });
+          y -= 4;
+      }
+    }
   });
 
   return Buffer.from(await pdf.save());

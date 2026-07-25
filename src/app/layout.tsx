@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
+import { AppChrome } from "@/components/app-chrome";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
@@ -53,7 +54,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-full">
         <SessionProvider>
-          <ThemeProvider>{children}</ThemeProvider>
+          <ThemeProvider>
+            {children}
+            <AppChrome />
+          </ThemeProvider>
         </SessionProvider>
       </body>
     </html>

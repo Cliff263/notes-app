@@ -33,18 +33,18 @@ export const SEED_NOTES: SeedNote[] = [
     daysAgo: 0,
     content: `Discussed the upcoming product launch strategy in today's meeting. The team gathered to finalize our approach for the Q2 release and align on what "done" means for each workstream.
 
-Agenda covered:
+## Agenda covered
 - Launch date confirmation and the freeze window
 - Marketing campaign timeline and asset handoff
 - Beta feedback themes from the last two cohorts
 - Support readiness and escalation paths
 
-Decisions:
+## Decisions
 - Ship the staged rollout at 10% for the first 48 hours
 - Hold the pricing page change until the launch post is live
 - Engineering owns the status page during launch week
 
-Action items:
+## Action items
 - Draft the launch announcement (marketing, Friday)
 - Finalize onboarding copy (design, Wednesday)
 - Run the load test against staging (platform, Thursday)
@@ -58,7 +58,7 @@ Action items:
     daysAgo: 0,
     content: `Concept for a new task management app that focuses on simplicity and speed. The idea came to me after using several task management tools that felt too complex for quick note-taking.
 
-Core features:
+## Core features
 - Minimalist design with clean interface
 - Focus on quick capture - ability to add tasks in seconds
 - Smart categorization using AI to automatically organize tasks
@@ -67,14 +67,14 @@ Core features:
 - Natural language processing for due dates and priorities
 - Minimal friction - no complex setup required
 
-Market research needed:
+## Market research needed
 - Analyze competitors (Todoist, Things, Any.do)
 - Survey potential users about pain points
 - Research pricing models
 - Identify target audience
 - Study app store reviews of similar apps
 
-Technical considerations:
+## Technical considerations
 - Native apps vs web app
 - Backend infrastructure
 - Data synchronization strategy
@@ -90,12 +90,12 @@ Next steps: Create a basic prototype and test with a small group of users to val
     daysAgo: 1,
     content: `Comprehensive marketing plan for Q1 2024. This quarter is crucial for establishing our brand presence and driving user acquisition ahead of the spring release.
 
-Objectives:
+## Objectives
 - Grow qualified signups by 40% quarter over quarter
 - Publish two case studies from existing customers
 - Establish a repeatable content cadence
 
-Channels:
+## Channels
 - Content marketing: one deep-dive post per week
 - Community: answer questions where our users already are
 - Partnerships: co-marketing with two adjacent tools
@@ -112,12 +112,12 @@ Measurement: weekly dashboard review every Monday, monthly narrative write-up fo
     daysAgo: 1,
     content: `Today was a productive day overall. I finished the project proposal that I've been working on for the past week. The process took longer than expected, mostly because I kept rewriting the problem statement until it actually said something.
 
-What went well:
+## What went well
 - Deep work block in the morning with no interruptions
 - Closed out three lingering review comments
 - Went for a walk instead of doom-scrolling at lunch
 
-What didn't:
+## What didn't
 - Started the day in my inbox again
 - Skipped the gym for the second time this week
 
@@ -135,7 +135,7 @@ Tomorrow: protect the first two hours, then batch the small stuff after lunch.`,
 3. Lake cabin - kayak rental, no reception, that's the point
 4. City break - museum morning, long lunch, bookshop crawl
 
-To sort out:
+## To sort out
 - Check the forecast before booking anything
 - Compare cabin prices for the last weekend of the month
 - Ask around who's free`,
@@ -147,13 +147,13 @@ To sort out:
     daysAgo: 3,
     content: `Notes from the second read. The framing that stuck this time: you don't rise to the level of your goals, you fall to the level of your systems.
 
-Key ideas:
+## Key ideas
 - Make it obvious - design the environment so the cue is unavoidable
 - Make it attractive - pair the habit with something you already want
 - Make it easy - reduce friction to the two-minute version
 - Make it satisfying - the reward has to land immediately
 
-Applying it:
+## Applying it
 - Put the running shoes by the door tonight
 - Two-minute rule for writing: open the file, write one sentence
 - Habit tracker on the fridge, not in an app I'll forget to open`,
@@ -203,15 +203,15 @@ Open question: when is a store better than passing props? Rough answer so far - 
     daysAgo: 6,
     content: `Retro for the sprint that just closed. Attendance was full, which helped.
 
-Went well:
+## Went well
 - Pairing on the migration caught two bugs before review
 - The new PR template cut review turnaround roughly in half
 
-Didn't go well:
+## Didn't go well
 - Two tickets carried over again with no visible progress
 - Staging was broken for most of Wednesday and nobody owned it
 
-Try next sprint:
+## Try next sprint
 - Cap work-in-progress at two tickets per person
 - Rotate a named "staging owner" each sprint
 - Fifteen-minute mid-sprint check on carryover risk`,
@@ -223,7 +223,7 @@ Try next sprint:
     daysAgo: 8,
     content: `Running a two-week experiment on the first hour of the day. Hypothesis: what I do before opening a screen sets the tone for everything after it.
 
-The routine:
+## The routine
 - Wake at the same time, no snooze
 - Water, then twenty minutes of movement
 - Ten minutes writing, longhand, no editing

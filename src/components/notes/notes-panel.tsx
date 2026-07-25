@@ -2,14 +2,19 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Archive,
   ArchiveRestore,
   ArrowUpDown,
   Check,
+  CheckSquare,
   LayoutGrid,
   List,
   Menu,
   PanelLeft,
+  Pin,
   Search,
+  Star,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -31,6 +36,11 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
   const toggleSidebar = useNotesStore((state) => state.toggleSidebar);
   const setDrawerOpen = useNotesStore((state) => state.setDrawerOpen);
   const sort = useNotesStore((state) => state.sort);
+  const selectMode = useNotesStore((state) => state.selectMode);
+  const setSelectMode = useNotesStore((state) => state.setSelectMode);
+  const selectedIds = useNotesStore((state) => state.selectedIds);
+  const setSelectedIds = useNotesStore((state) => state.setSelectedIds);
+  const bulk = useNotesStore((state) => state.bulk);
   const createNote = useNotesStore((state) => state.createNote);
   const updateNote = useNotesStore((state) => state.updateNote);
 
@@ -74,8 +84,11 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search notes..."
             data-search-input
-            className="field h-9 w-full rounded-lg border border-line bg-input pl-9 pr-3 text-foreground transition focus:border-line-strong"
+            className="field h-9 w-full rounded-lg border border-line bg-input pl-9 pr-14 text-foreground transition focus:border-line-strong"
           />
+          <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-line px-1.5 py-0.5 text-[10px] text-muted-2 lg:block">
+            ⌘K
+          </kbd>
         </div>
 
         <div className="flex shrink-0 items-center gap-1 rounded-lg border border-line p-0.5">
@@ -141,10 +154,124 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
               </button>
             )}
 
+            {filter.kind === "trash" && notes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void bulk("emptyTrash", [])}
+                className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] text-danger transition hover:bg-card-hover"
+              >
+                <Trash2 className="size-3.5" />
+                <span className="hidden sm:inline">Empty trash</span>
+              </button>
+            )}
+
+            {notes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectMode(!selectMode)}
+                aria-pressed={selectMode}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] transition",
+                  selectMode
+                    ? "border-line-strong bg-card text-foreground"
+                    : "border-line text-muted hover:bg-card-hover hover:text-foreground",
+                )}
+              >
+                <CheckSquare className="size-3.5" />
+                <span className="hidden sm:inline">Select</span>
+              </button>
+            )}
+
             <SortMenu />
           </div>
         </div>
       </div>
+
+      {/* Bulk action bar, only while selecting */}
+      <AnimatePresence>
+        {selectMode && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden border-b border-line bg-panel"
+          >
+            <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedIds(
+                    selectedIds.size === notes.length
+                      ? new Set<string>()
+                      : new Set(notes.map((note) => note.id)),
+                  )
+                }
+                className="text-[11px] text-muted transition hover:text-foreground"
+              >
+                {selectedIds.size === notes.length ? "Clear" : "Select all"}
+              </button>
+
+              <span className="text-[11px] text-muted-2">
+                {selectedIds.size} selected
+              </span>
+
+              <div className="flex flex-1 flex-wrap items-center justify-end gap-1.5">
+                {filter.kind === "trash" ? (
+                  <>
+                    <BulkButton
+                      icon={ArchiveRestore}
+                      label="Restore"
+                      disabled={!selectedIds.size}
+                      onClick={() => void bulk("restore", [...selectedIds])}
+                    />
+                    <BulkButton
+                      icon={Trash2}
+                      label="Delete forever"
+                      danger
+                      disabled={!selectedIds.size}
+                      onClick={() => void bulk("purge", [...selectedIds])}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <BulkButton
+                      icon={Star}
+                      label="Favorite"
+                      disabled={!selectedIds.size}
+                      onClick={() => void bulk("favorite", [...selectedIds])}
+                    />
+                    <BulkButton
+                      icon={Pin}
+                      label="Pin"
+                      disabled={!selectedIds.size}
+                      onClick={() => void bulk("pin", [...selectedIds])}
+                    />
+                    <BulkButton
+                      icon={filter.kind === "archive" ? ArchiveRestore : Archive}
+                      label={filter.kind === "archive" ? "Restore" : "Archive"}
+                      disabled={!selectedIds.size}
+                      onClick={() =>
+                        void bulk(
+                          filter.kind === "archive" ? "unarchive" : "archive",
+                          [...selectedIds],
+                        )
+                      }
+                    />
+                    <BulkButton
+                      icon={Trash2}
+                      label="Delete"
+                      danger
+                      disabled={!selectedIds.size}
+                      onClick={() => void bulk("trash", [...selectedIds])}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="pb-navbar min-h-0 flex-1 overflow-y-auto p-3 scroll-thin">
         {status === "loading" && allNotes.length === 0 ? (
@@ -182,6 +309,37 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
         )}
       </div>
     </section>
+  );
+}
+
+function BulkButton({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+  danger,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] transition disabled:opacity-40",
+        danger
+          ? "text-muted hover:bg-card-hover hover:text-danger"
+          : "text-muted hover:bg-card-hover hover:text-foreground",
+      )}
+    >
+      <Icon className="size-3.5" />
+      {label}
+    </button>
   );
 }
 

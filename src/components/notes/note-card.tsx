@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CalendarClock, Pin, RotateCcw, Star } from "lucide-react";
+import { CalendarClock, Check, Pin, RotateCcw, Star } from "lucide-react";
 import type { Note } from "@/lib/types";
 import { cn, readingTime, relativeTime, shortDate, stripMarkdown } from "@/lib/utils";
 import { useNotesStore } from "@/store/notes-store";
@@ -9,6 +9,10 @@ import { useNotesStore } from "@/store/notes-store";
 export function NoteCard({ note, selected }: { note: Note; selected: boolean }) {
   const select = useNotesStore((state) => state.select);
   const updateNote = useNotesStore((state) => state.updateNote);
+  const restoreNote = useNotesStore((state) => state.restoreNote);
+  const selectMode = useNotesStore((state) => state.selectMode);
+  const toggleSelected = useNotesStore((state) => state.toggleSelected);
+  const checked = useNotesStore((state) => state.selectedIds.has(note.id));
 
   const excerpt = stripMarkdown(note.content);
   const minutes = readingTime(note.content);
@@ -21,15 +25,28 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
-      onClick={() => select(note.id)}
+      onClick={() => (selectMode ? toggleSelected(note.id) : select(note.id))}
       className={cn(
         "group cursor-pointer rounded-xl border bg-card p-4 transition-colors",
+        selectMode && checked && "ring-1 ring-[var(--glow-1)]",
         selected
           ? "border-[color-mix(in_srgb,var(--foreground)_38%,transparent)] bg-card-hover"
           : "border-line hover:border-line-strong hover:bg-card-hover",
       )}
     >
       <div className="flex items-start gap-2">
+        {selectMode ? (
+          <span
+            className={cn(
+              "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition",
+              checked
+                ? "border-transparent bg-btn text-btn-foreground"
+                : "border-line-strong",
+            )}
+          >
+            {checked && <Check className="size-3" />}
+          </span>
+        ) : (
         <button
           type="button"
           onClick={(event) => {
@@ -46,6 +63,7 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
         >
           <Pin className={cn("size-3.5", note.pinned && "fill-current")} />
         </button>
+        )}
 
         <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-tight">
           {note.title || "Untitled note"}
@@ -56,7 +74,7 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              updateNote(note.id, { deletedAt: null });
+              restoreNote(note.id);
             }}
             className="flex shrink-0 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[10px] text-muted transition hover:text-foreground"
           >
