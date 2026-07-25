@@ -10,22 +10,16 @@ type NotesState = {
 
   selectedId: string | null;
   search: string;
-  filter: NoteFilter;
-  activeTag: string | null;
   view: ViewMode;
   sidebarOpen: boolean;
-  listOpen: boolean;
 
   load: () => Promise<void>;
   select: (id: string | null) => void;
   setSearch: (value: string) => void;
-  setFilter: (filter: NoteFilter) => void;
-  setActiveTag: (tag: string | null) => void;
   setView: (view: ViewMode) => void;
   toggleSidebar: () => void;
-  toggleList: () => void;
 
-  createNote: () => Promise<void>;
+  createNote: (category?: string, tags?: string[]) => Promise<string | null>;
   updateNote: (id: string, patch: Partial<Note>) => void;
   duplicateNote: (id: string) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
@@ -58,11 +52,8 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
   selectedId: null,
   search: "",
-  filter: { kind: "all" },
-  activeTag: null,
   view: "list",
   sidebarOpen: true,
-  listOpen: true,
 
   async load() {
     set({ status: "loading" });
@@ -77,7 +68,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         selectedId:
           state.selectedId && notes.some((note) => note.id === state.selectedId)
             ? state.selectedId
-            : (notes.find((note) => !note.archived)?.id ?? null),
+            : null,
       }));
     } catch (error) {
       set({ status: "error", error: (error as Error).message });
@@ -86,26 +77,21 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
   select: (selectedId) => set({ selectedId }),
   setSearch: (search) => set({ search }),
-  setFilter: (filter) => set({ filter, activeTag: null }),
-  setActiveTag: (activeTag) => set({ activeTag }),
   setView: (view) => set({ view }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-  toggleList: () => set((state) => ({ listOpen: !state.listOpen })),
 
-  async createNote() {
-    const { filter } = get();
-    const category = filter.kind === "category" ? filter.value : "Personal";
-    const draft = { title: "Untitled note", content: "", category, tags: [] as string[] };
-
+  /** Seeds the new note with whatever the current route implies. */
+  async createNote(category = "Personal", tags = []) {
     const response = await fetch("/api/notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(draft),
+      body: JSON.stringify({ title: "Untitled note", content: "", category, tags }),
     });
-    if (!response.ok) return;
+    if (!response.ok) return null;
 
     const note: Note = await response.json();
     set((state) => ({ notes: [note, ...state.notes], selectedId: note.id }));
+    return note.id;
   },
 
   updateNote(id, patch) {
@@ -150,27 +136,34 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   },
 }));
 
-/** Notes after search, filter and tag are applied, pinned first. */
-export function selectVisibleNotes(state: NotesState) {
-  const query = state.search.trim().toLowerCase();
+/**
+ * The route decides which notes are on screen, so filtering is a plain function
+ * rather than store state.
+ */
+export function filterNotes(notes: Note[], filter: NoteFilter, search: string) {
+  const query = search.trim().toLowerCase();
 
-  return state.notes
+  return notes
     .filter((note) => {
-      switch (state.filter.kind) {
+      switch (filter.kind) {
         case "favorites":
           if (!note.favorite || note.archived) return false;
           break;
         case "pinned":
           if (!note.pinned || note.archived) return false;
           break;
+        case "archive":
+          if (!note.archived) return false;
+          break;
         case "category":
-          if (note.category !== state.filter.value) return false;
+          if (note.category !== filter.value || note.archived) return false;
+          break;
+        case "tag":
+          if (!note.tags.includes(filter.value) || note.archived) return false;
           break;
         default:
           if (note.archived) return false;
       }
-
-      if (state.activeTag && !note.tags.includes(state.activeTag)) return false;
 
       if (query) {
         const haystack = [note.title, note.content, note.tags.join(" ")]
@@ -189,14 +182,39 @@ export function selectVisibleNotes(state: NotesState) {
 
 export function selectAllTags(state: NotesState) {
   const tags = new Set<string>();
-  for (const note of state.notes) for (const tag of note.tags) tags.add(tag);
+  for (const note of state.notes) {
+    if (!note.archived) for (const tag of note.tags) tags.add(tag);
+  }
   return [...tags].sort();
+}
+
+/** Tag name -> how many live notes carry it. */
+export function selectTagCounts(state: NotesState) {
+  const counts: Record<string, number> = {};
+  for (const note of state.notes) {
+    if (note.archived) continue;
+    for (const tag of note.tags) counts[tag] = (counts[tag] ?? 0) + 1;
+  }
+  return counts;
 }
 
 export function selectCategoryCounts(state: NotesState) {
   const counts: Record<string, number> = {};
   for (const note of state.notes) {
+    if (note.archived) continue;
     counts[note.category] = (counts[note.category] ?? 0) + 1;
   }
   return counts;
+}
+
+export function selectArchivedCount(state: NotesState) {
+  return state.notes.filter((note) => note.archived).length;
+}
+
+export function selectFavoriteCount(state: NotesState) {
+  return state.notes.filter((note) => note.favorite && !note.archived).length;
+}
+
+export function selectPinnedCount(state: NotesState) {
+  return state.notes.filter((note) => note.pinned && !note.archived).length;
 }

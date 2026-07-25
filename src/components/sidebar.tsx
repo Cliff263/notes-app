@@ -8,6 +8,7 @@ import {
   CalendarDays,
   ChevronDown,
   FileText,
+  Hash,
   Lightbulb,
   LogOut,
   NotebookText,
@@ -18,14 +19,19 @@ import {
   User,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, type ComponentType } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { cn } from "@/lib/utils";
+import { ROUTES } from "@/lib/routes";
 import { CATEGORIES } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import {
   selectAllTags,
+  selectArchivedCount,
   selectCategoryCounts,
+  selectFavoriteCount,
+  selectPinnedCount,
   useNotesStore,
 } from "@/store/notes-store";
 
@@ -34,36 +40,40 @@ const CATEGORY_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   Work: Briefcase,
   Ideas: Lightbulb,
   Journal: BookOpen,
-  Archive: Archive,
 };
 
-export function Sidebar({ section }: { section: "notes" | "calendar" | "settings" }) {
+export function Sidebar() {
+  const pathname = usePathname();
   const router = useRouter();
   const { data: session } = useSession();
   const [categoriesOpen, setCategoriesOpen] = useState(true);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const filter = useNotesStore((state) => state.filter);
-  const activeTag = useNotesStore((state) => state.activeTag);
-  const setFilter = useNotesStore((state) => state.setFilter);
-  const setActiveTag = useNotesStore((state) => state.setActiveTag);
   const createNote = useNotesStore((state) => state.createNote);
   // These selectors build a fresh array/object, so they need a shallow compare
   // to keep useSyncExternalStore from looping.
   const tags = useNotesStore(useShallow(selectAllTags));
   const counts = useNotesStore(useShallow(selectCategoryCounts));
+  const favoriteCount = useNotesStore(selectFavoriteCount);
+  const pinnedCount = useNotesStore(selectPinnedCount);
+  const archivedCount = useNotesStore(selectArchivedCount);
 
-  const onNotes = section === "notes";
-
-  /** Filter clicks from another page hop back to the notes view first. */
-  function applyFilter(next: Parameters<typeof setFilter>[0]) {
-    setFilter(next);
-    if (!onNotes) router.push("/");
-  }
-
+  /** A new note inherits the category or tag of the view you're in. */
   async function handleNewNote() {
-    await createNote();
-    if (!onNotes) router.push("/");
+    const categoryMatch = /^\/category\/(.+)$/.exec(pathname);
+    const tagMatch = /^\/tags\/(.+)$/.exec(pathname);
+
+    const category = categoryMatch
+      ? (CATEGORIES.find(
+          (item) => item.toLowerCase() === decodeURIComponent(categoryMatch[1]),
+        ) ?? "Personal")
+      : "Personal";
+    const noteTags = tagMatch ? [decodeURIComponent(tagMatch[1])] : [];
+
+    const id = await createNote(category, noteTags);
+    if (id && (pathname === ROUTES.archive || pathname === ROUTES.tags)) {
+      router.push(ROUTES.all);
+    }
   }
 
   const user = session?.user;
@@ -72,12 +82,12 @@ export function Sidebar({ section }: { section: "notes" | "calendar" | "settings
 
   return (
     <aside className="flex h-full w-[248px] shrink-0 flex-col border-r border-line bg-panel">
-      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+      <Link href={ROUTES.all} className="flex items-center gap-2 px-4 pt-4 pb-3">
         <span className="flex size-7 items-center justify-center rounded-md border border-line bg-card">
           <FileText className="size-3.5 text-foreground" />
         </span>
         <span className="text-[13px] font-semibold tracking-tight">Square Notes</span>
-      </div>
+      </Link>
 
       <div className="px-3 pb-3">
         <button
@@ -91,29 +101,31 @@ export function Sidebar({ section }: { section: "notes" | "calendar" | "settings
       </div>
 
       <nav className="space-y-0.5 px-3">
-        <NavItem
+        <NavLink
+          href={ROUTES.all}
           icon={NotebookText}
           label="All Notes"
-          active={onNotes && filter.kind === "all" && !activeTag}
-          onClick={() => applyFilter({ kind: "all" })}
+          active={pathname === ROUTES.all}
         />
-        <NavItem
+        <NavLink
+          href={ROUTES.favorites}
           icon={Star}
           label="Favorites"
-          active={onNotes && filter.kind === "favorites"}
-          onClick={() => applyFilter({ kind: "favorites" })}
+          count={favoriteCount}
+          active={pathname === ROUTES.favorites}
         />
-        <NavItem
+        <NavLink
+          href={ROUTES.pinned}
           icon={Pin}
           label="Pinned"
-          active={onNotes && filter.kind === "pinned"}
-          onClick={() => applyFilter({ kind: "pinned" })}
+          count={pinnedCount}
+          active={pathname === ROUTES.pinned}
         />
-        <NavItem
+        <NavLink
+          href={ROUTES.calendar}
           icon={CalendarDays}
           label="Calendar"
-          active={section === "calendar"}
-          onClick={() => router.push("/calendar")}
+          active={pathname.startsWith(ROUTES.calendar)}
         />
       </nav>
 
@@ -143,20 +155,25 @@ export function Sidebar({ section }: { section: "notes" | "calendar" | "settings
               className="overflow-hidden"
             >
               <div className="space-y-0.5 pt-1">
-                {CATEGORIES.map((category) => (
-                  <NavItem
-                    key={category}
-                    icon={CATEGORY_ICONS[category] ?? FileText}
-                    label={category}
-                    count={counts[category]}
-                    active={
-                      onNotes &&
-                      filter.kind === "category" &&
-                      filter.value === category
-                    }
-                    onClick={() => applyFilter({ kind: "category", value: category })}
-                  />
-                ))}
+                {CATEGORIES.filter((category) => category !== "Archive").map(
+                  (category) => (
+                    <NavLink
+                      key={category}
+                      href={ROUTES.category(category)}
+                      icon={CATEGORY_ICONS[category] ?? FileText}
+                      label={category}
+                      count={counts[category]}
+                      active={pathname === ROUTES.category(category)}
+                    />
+                  ),
+                )}
+                <NavLink
+                  href={ROUTES.archive}
+                  icon={Archive}
+                  label="Archive"
+                  count={archivedCount}
+                  active={pathname === ROUTES.archive}
+                />
               </div>
             </motion.div>
           )}
@@ -164,27 +181,26 @@ export function Sidebar({ section }: { section: "notes" | "calendar" | "settings
       </div>
 
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-5 scroll-thin">
-        <p className="pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-2">
+        <Link
+          href={ROUTES.tags}
+          className="flex items-center gap-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-2 transition hover:text-muted"
+        >
+          <Hash className="size-2.5" />
           Tags
-        </p>
+        </Link>
+
         <div className="flex flex-wrap gap-1.5 pb-4">
           <TagChip
+            href={ROUTES.tags}
             label="All tags"
-            active={!activeTag}
-            onClick={() => {
-              setActiveTag(null);
-              if (!onNotes) router.push("/");
-            }}
+            active={pathname === ROUTES.tags}
           />
           {tags.map((tag) => (
             <TagChip
               key={tag}
+              href={ROUTES.tag(tag)}
               label={`#${tag}`}
-              active={activeTag === tag}
-              onClick={() => {
-                setActiveTag(activeTag === tag ? null : tag);
-                if (!onNotes) router.push("/");
-              }}
+              active={pathname === ROUTES.tag(tag)}
             />
           ))}
         </div>
@@ -200,20 +216,17 @@ export function Sidebar({ section }: { section: "notes" | "calendar" | "settings
               transition={{ duration: 0.15 }}
               className="absolute bottom-[68px] left-3 right-3 z-20 overflow-hidden rounded-lg border border-line bg-card shadow-xl"
             >
-              <button
-                type="button"
-                onClick={() => {
-                  setUserMenuOpen(false);
-                  router.push("/settings");
-                }}
+              <Link
+                href={ROUTES.settings}
+                onClick={() => setUserMenuOpen(false)}
                 className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-muted transition hover:bg-card-hover hover:text-foreground"
               >
                 <Settings className="size-3.5" />
                 Settings
-              </button>
+              </Link>
               <button
                 type="button"
-                onClick={() => signOut({ redirectTo: "/login" })}
+                onClick={() => signOut({ redirectTo: ROUTES.all })}
                 className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-muted transition hover:bg-card-hover hover:text-danger"
               >
                 <LogOut className="size-3.5" />
@@ -249,52 +262,50 @@ export function Sidebar({ section }: { section: "notes" | "calendar" | "settings
   );
 }
 
-function NavItem({
+function NavLink({
+  href,
   icon: Icon,
   label,
   active,
   count,
-  onClick,
 }: {
+  href: string;
   icon: ComponentType<{ className?: string }>;
   label: string;
   active?: boolean;
   count?: number;
-  onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <Link
+      href={href}
       className={cn(
-        "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition",
+        "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition",
         active
           ? "bg-card text-foreground"
           : "text-muted hover:bg-card-hover hover:text-foreground",
       )}
     >
       <Icon className="size-4 shrink-0" />
-      <span className="flex-1 text-left">{label}</span>
+      <span className="flex-1">{label}</span>
       {typeof count === "number" && count > 0 && (
         <span className="text-[11px] text-muted-2">{count}</span>
       )}
-    </button>
+    </Link>
   );
 }
 
 function TagChip({
+  href,
   label,
   active,
-  onClick,
 }: {
+  href: string;
   label: string;
   active?: boolean;
-  onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <Link
+      href={href}
       className={cn(
         "rounded-md px-2 py-1 text-[11px] transition",
         active
@@ -303,6 +314,6 @@ function TagChip({
       )}
     >
       {label}
-    </button>
+    </Link>
   );
 }

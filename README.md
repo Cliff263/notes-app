@@ -13,10 +13,35 @@ sign-in.
 **Notes**
 
 - Create, edit, duplicate, archive and delete notes; edits save automatically
-- Pin and favorite, with dedicated sidebar views for each
-- Filter by category (Personal, Work, Ideas, Journal, Archive) or by tag
+- Pin, favorite and tag, each with its own page
 - Search across title, content and tags in one pass
 - Grid or list layout, dark or light theme
+
+Every destination in the sidebar is a real route, so views are linkable and
+survive a refresh:
+
+| Route | Shows |
+| --- | --- |
+| `/` | All notes except the archive |
+| `/favorites` | Starred notes |
+| `/pinned` | Pinned notes |
+| `/archive` | Archived notes, with restore (one note or all at once) |
+| `/category/[category]` | Personal, Work, Ideas or Journal |
+| `/tags` | Every tag with its count and example notes |
+| `/tags/[tag]` | Notes carrying that tag |
+| `/calendar` | Month view and what's upcoming |
+| `/settings` | Profile, appearance, export, account |
+
+A new note inherits the view you create it from — from `/category/work` it lands
+in Work, from `/tags/react` it arrives already tagged `#react`.
+
+**Export**
+
+Any note can be downloaded as **PDF**, **Word (.docx)**, **Markdown** or **plain
+text** from the ⋯ menu in the editor. Settings has an "Export every note" section
+that packs the whole workspace into a single document, optionally including the
+archive. Documents are generated server-side (`pdf-lib` and `docx`), so nothing
+depends on the browser's print dialog.
 
 **Calendar** (`/calendar`)
 
@@ -104,18 +129,22 @@ Then `npm run db:push` as usual.
 src/
   app/
     (auth)/login, (auth)/signup   Sign-in and sign-up screens
-    api/                          Route handlers for notes, events, account, auth
+    api/                          Route handlers for notes, events, account, auth, export
+    favorites/, pinned/, archive/ Note views
+    category/[category]/          One view per category
+    tags/, tags/[tag]/            Tag index and per-tag view
     calendar/                     Calendar page
-    settings/                     Account and appearance settings
-    page.tsx                      The notes workspace
+    settings/                     Account, appearance and export
+    page.tsx                      All notes
   components/
     auth/                         Auth shell and form
     calendar/                     Month grid, upcoming panel, event modal
     notes/                        Note cards, list pane, editor
     sidebar.tsx                   Shared navigation
+    workspace.tsx                 The three-pane shell each note route renders
   db/                             Drizzle schema, client, seed data
   store/                          Zustand stores for notes and events
-  lib/                            Types, formatting helpers, session guard
+  lib/                            Types, routes, formatting, export builders, session guard
   auth.ts, auth.config.ts         Auth.js configuration
   proxy.ts                        Route protection (Next 16's middleware)
 ```

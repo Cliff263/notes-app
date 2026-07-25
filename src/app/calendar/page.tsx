@@ -46,7 +46,7 @@ export default function CalendarPage() {
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="h-full shrink-0 overflow-hidden"
           >
-            <Sidebar section="calendar" />
+            <Sidebar />
           </motion.div>
         )}
       </AnimatePresence>

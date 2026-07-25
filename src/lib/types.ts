@@ -43,11 +43,16 @@ export type CalendarEvent = {
   createdAt: string;
 };
 
-/** Values the sidebar can filter the note list down to. */
+/** Which slice of the workspace a route is showing. */
 export type NoteFilter =
   | { kind: "all" }
   | { kind: "favorites" }
   | { kind: "pinned" }
-  | { kind: "category"; value: string };
+  | { kind: "archive" }
+  | { kind: "category"; value: string }
+  | { kind: "tag"; value: string };
+
+export const EXPORT_FORMATS = ["pdf", "docx", "md", "txt"] as const;
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 export type ViewMode = "grid" | "list";

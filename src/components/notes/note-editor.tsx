@@ -4,8 +4,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Archive,
   ArchiveRestore,
+  ChevronRight,
   Copy,
+  Download,
+  FileText,
+  FileType,
   Hash,
+  Hash as HashIcon,
   MoreHorizontal,
   Pin,
   Star,
@@ -13,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { CATEGORIES, type Note } from "@/lib/types";
+import { CATEGORIES, type ExportFormat, type Note } from "@/lib/types";
 import { cn, longDateTime, wordCount } from "@/lib/utils";
 import { useNotesStore } from "@/store/notes-store";
 
@@ -55,16 +60,30 @@ function EditorBody({ note }: { note: Note }) {
 
   const [tagDraft, setTagDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
     function onPointerDown(event: MouseEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+        setExportOpen(false);
+      }
     }
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [menuOpen]);
+
+  /**
+   * Exports go through a normal navigation so the browser handles the download
+   * dialog; the route answers with a Content-Disposition attachment.
+   */
+  function exportNote(format: ExportFormat) {
+    setMenuOpen(false);
+    setExportOpen(false);
+    window.location.href = `/api/notes/${note.id}/export?format=${format}`;
+  }
 
   function addTag() {
     const tag = tagDraft.trim().replace(/^#/, "").toLowerCase();
@@ -130,6 +149,56 @@ function EditorBody({ note }: { note: Note }) {
                     void duplicateNote(note.id);
                   }}
                 />
+
+                <button
+                  type="button"
+                  onClick={() => setExportOpen((open) => !open)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-muted transition hover:bg-card-hover hover:text-foreground"
+                >
+                  <Download className="size-3.5" />
+                  <span className="flex-1 text-left">Export</span>
+                  <ChevronRight
+                    className={cn("size-3 transition", exportOpen && "rotate-90")}
+                  />
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {exportOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.16 }}
+                      className="overflow-hidden border-y border-line bg-panel"
+                    >
+                      <MenuItem
+                        icon={FileType}
+                        label="PDF document"
+                        indent
+                        onClick={() => exportNote("pdf")}
+                      />
+                      <MenuItem
+                        icon={FileText}
+                        label="Word (.docx)"
+                        indent
+                        onClick={() => exportNote("docx")}
+                      />
+                      <MenuItem
+                        icon={HashIcon}
+                        label="Markdown (.md)"
+                        indent
+                        onClick={() => exportNote("md")}
+                      />
+                      <MenuItem
+                        icon={FileText}
+                        label="Plain text (.txt)"
+                        indent
+                        onClick={() => exportNote("txt")}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <MenuItem
                   icon={note.archived ? ArchiveRestore : Archive}
                   label={note.archived ? "Restore from archive" : "Archive"}
@@ -273,18 +342,21 @@ function MenuItem({
   label,
   onClick,
   danger,
+  indent,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   onClick: () => void;
   danger?: boolean;
+  indent?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2 px-3 py-2 text-[12px] transition hover:bg-card-hover",
+        "flex w-full items-center gap-2 py-2 text-[12px] transition hover:bg-card-hover",
+        indent ? "pl-7 pr-3" : "px-3",
         danger ? "text-muted hover:text-danger" : "text-muted hover:text-foreground",
       )}
     >

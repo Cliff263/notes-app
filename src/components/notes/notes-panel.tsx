@@ -1,15 +1,18 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { LayoutGrid, List, PanelLeft, Search, X } from "lucide-react";
+import { ArchiveRestore, LayoutGrid, List, PanelLeft, Search } from "lucide-react";
+import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { describeFilter } from "@/lib/routes";
+import type { NoteFilter } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { selectVisibleNotes, useNotesStore } from "@/store/notes-store";
+import { filterNotes, useNotesStore } from "@/store/notes-store";
 import { NoteCard } from "./note-card";
 
-export function NotesPanel() {
-  const notes = useNotesStore(useShallow(selectVisibleNotes));
+export function NotesPanel({ filter }: { filter: NoteFilter }) {
+  const allNotes = useNotesStore(useShallow((state) => state.notes));
   const status = useNotesStore((state) => state.status);
   const search = useNotesStore((state) => state.search);
   const setSearch = useNotesStore((state) => state.setSearch);
@@ -17,8 +20,16 @@ export function NotesPanel() {
   const setView = useNotesStore((state) => state.setView);
   const selectedId = useNotesStore((state) => state.selectedId);
   const toggleSidebar = useNotesStore((state) => state.toggleSidebar);
-  const activeTag = useNotesStore((state) => state.activeTag);
-  const setActiveTag = useNotesStore((state) => state.setActiveTag);
+  const createNote = useNotesStore((state) => state.createNote);
+  const updateNote = useNotesStore((state) => state.updateNote);
+
+  const notes = useMemo(
+    () => filterNotes(allNotes, filter, search),
+    [allNotes, filter, search],
+  );
+  const copy = describeFilter(filter);
+
+  const archivedIds = notes.map((note) => note.id);
 
   return (
     <section className="flex h-full min-w-0 flex-1 flex-col border-r border-line bg-surface">
@@ -62,25 +73,51 @@ export function NotesPanel() {
         <ThemeToggle className="shrink-0" />
       </header>
 
-      {activeTag && (
-        <div className="flex items-center gap-2 border-b border-line px-4 py-2">
-          <span className="text-[11px] text-muted-2">Filtered by</span>
+      {/* Which view you're in, so the list is never ambiguous */}
+      <div className="flex items-end justify-between gap-3 border-b border-line px-4 py-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-[15px] font-semibold tracking-tight">
+            {copy.title}
+          </h1>
+          <p className="mt-0.5 truncate text-[11px] text-muted-2">
+            {notes.length} {notes.length === 1 ? "note" : "notes"} · {copy.description}
+          </p>
+        </div>
+
+        {filter.kind === "archive" && notes.length > 0 && (
           <button
             type="button"
-            onClick={() => setActiveTag(null)}
-            className="flex items-center gap-1 rounded-md bg-card px-2 py-0.5 text-[11px] text-foreground transition hover:bg-card-hover"
+            onClick={() => {
+              for (const id of archivedIds) {
+                updateNote(id, { archived: false });
+              }
+            }}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] text-muted transition hover:bg-card-hover hover:text-foreground"
           >
-            #{activeTag}
-            <X className="size-3" />
+            <ArchiveRestore className="size-3.5" />
+            Restore all
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3 scroll-thin">
-        {status === "loading" && notes.length === 0 ? (
+        {status === "loading" && allNotes.length === 0 ? (
           <SkeletonList />
         ) : notes.length === 0 ? (
-          <EmptyState search={search} />
+          <EmptyState
+            search={search}
+            message={copy.empty}
+            onCreate={
+              filter.kind === "archive"
+                ? undefined
+                : () => {
+                    void createNote(
+                      filter.kind === "category" ? filter.value : "Personal",
+                      filter.kind === "tag" ? [filter.value] : [],
+                    );
+                  }
+            }
+          />
         ) : (
           <motion.div
             layout
@@ -148,9 +185,15 @@ function SkeletonList() {
   );
 }
 
-function EmptyState({ search }: { search: string }) {
-  const createNote = useNotesStore((state) => state.createNote);
-
+function EmptyState({
+  search,
+  message,
+  onCreate,
+}: {
+  search: string;
+  message: string;
+  onCreate?: () => void;
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -163,12 +206,12 @@ function EmptyState({ search }: { search: string }) {
       <p className="max-w-[260px] text-[12px] text-muted-2">
         {search
           ? "Try a different word, or clear the search to see everything again."
-          : "Create your first note and it will show up right here."}
+          : message}
       </p>
-      {!search && (
+      {!search && onCreate && (
         <button
           type="button"
-          onClick={() => void createNote()}
+          onClick={onCreate}
           className="mt-2 rounded-lg bg-btn px-3 py-1.5 text-[12px] font-medium text-btn-foreground transition hover:opacity-90"
         >
           New Note

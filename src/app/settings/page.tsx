@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Loader2, LogOut, Moon, Sun, Trash2 } from "lucide-react";
+import { Check, Download, Loader2, LogOut, Moon, Sun, Trash2 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
@@ -30,6 +30,7 @@ export default function SettingsPage() {
   const [name, setName] = useState("");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
 
   useEffect(() => {
     if (notesStatus === "idle") void loadNotes();
@@ -78,7 +79,7 @@ export default function SettingsPage() {
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="h-full shrink-0 overflow-hidden"
           >
-            <Sidebar section="settings" />
+            <Sidebar />
           </motion.div>
         )}
       </AnimatePresence>
@@ -194,6 +195,47 @@ export default function SettingsPage() {
             <div className="grid grid-cols-2 gap-3">
               <Stat label="Notes" value={account?.noteCount ?? 0} />
               <Stat label="Events" value={account?.eventCount ?? 0} />
+            </div>
+
+            <div className="border-t border-line pt-4">
+              <p className="text-[13px]">Export every note</p>
+              <p className="mt-0.5 text-[11px] text-muted-2">
+                All your notes in one document, newest first. Archived notes are
+                included only if you tick the box.
+              </p>
+
+              <label className="mt-2.5 flex items-center gap-2 text-[12px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={includeArchived}
+                  onChange={(event) => setIncludeArchived(event.target.checked)}
+                  className="size-3.5 accent-[var(--glow-1)]"
+                />
+                Include archived notes
+              </label>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(
+                  [
+                    ["pdf", "PDF"],
+                    ["docx", "Word"],
+                    ["md", "Markdown"],
+                    ["txt", "Text"],
+                  ] as const
+                ).map(([format, label]) => (
+                  <button
+                    key={format}
+                    type="button"
+                    onClick={() => {
+                      window.location.href = `/api/notes/export?format=${format}&archived=${includeArchived}`;
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12px] text-muted transition hover:bg-card-hover hover:text-foreground"
+                  >
+                    <Download className="size-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </Card>
 
