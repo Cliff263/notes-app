@@ -26,6 +26,7 @@ survive a refresh:
 | `/favorites` | Starred notes |
 | `/pinned` | Pinned notes |
 | `/archive` | Archived notes, with restore (one note or all at once) |
+| `/trash` | Deleted notes, kept 30 days, with restore or delete forever |
 | `/category/[category]` | Personal, Work, Ideas or Journal |
 | `/tags` | Every tag with its count and example notes |
 | `/tags/[tag]` | Notes carrying that tag |
@@ -34,6 +35,40 @@ survive a refresh:
 
 A new note inherits the view you create it from — from `/category/work` it lands
 in Work, from `/tags/react` it arrives already tagged `#react`.
+
+**Writing**
+
+- Markdown with a formatting toolbar, a Write/Preview toggle, and lists that
+  continue when you press Enter
+- Headings, lists, quotes, code and emphasis render in the preview and carry
+  through to PDF and Word exports
+
+**Getting around**
+
+- ⌘K / Ctrl K opens a command palette that searches note titles and content and
+  jumps to any view
+- `N` new note, `/` search, `E` favorite, `P` pin, `A` archive, `G` then a
+  letter to navigate, `?` for the full list
+- Sort any view by last edited, date created, title or length
+
+**Safety net**
+
+- Deleting moves a note to `/trash`, where it can be restored or removed for
+  good; nothing is lost to a mis-tap
+- Select mode for bulk favorite, pin, archive and delete
+
+**Calendar and notes together**
+
+- Give a note a due date and it appears in the calendar's "Notes due" list
+- "Add to calendar" creates an event from the note and links them both ways
+
+**On a phone**
+
+- Sidebar becomes a drawer, a bottom tab bar replaces it, and the editor opens
+  as a full-screen sheet
+- The month view switches to a dot grid with the day's agenda underneath
+- Installable as an app (PWA) with a service worker, so notes stay readable
+  offline and edits made offline are replayed when the connection returns
 
 **Export**
 
@@ -90,6 +125,10 @@ authorized redirect URI on the OAuth client (and your production URL when you de
 ```bash
 npm run db:push
 ```
+
+Run this again after pulling changes that add columns — `notes.deletedAt`,
+`notes.dueAt` and `events.noteId` were added for trash, due dates and
+note-to-event links. All three are nullable, so the migration is additive.
 
 ### 4. Run it
 

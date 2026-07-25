@@ -13,6 +13,8 @@ import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { useNotesStore } from "@/store/notes-store";
 
+type InstallPromptEvent = Event & { prompt: () => Promise<void> };
+
 type Account = {
   name: string | null;
   email: string;
@@ -35,6 +37,17 @@ export default function SettingsPage() {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+
+  useEffect(() => {
+    // Chromium fires this when the app qualifies for installation.
+    function onPrompt(event: Event) {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    }
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
+  }, []);
 
   useEffect(() => {
     if (notesStatus === "idle") void loadNotes();
@@ -243,6 +256,33 @@ export default function SettingsPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          </Card>
+
+          <Card title="Install" delay={0.17}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[13px]">Install Square Notes</p>
+                <p className="mt-0.5 text-[11px] text-muted-2">
+                  {installPrompt
+                    ? "Adds it to your home screen or dock, opening without browser chrome."
+                    : "Use your browser's install or “Add to Home Screen” option. Once installed, your notes stay readable offline."}
+                </p>
+              </div>
+
+              {installPrompt && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await installPrompt.prompt();
+                    setInstallPrompt(null);
+                  }}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg bg-btn px-3 py-1.5 text-[12px] font-medium text-btn-foreground transition hover:opacity-90"
+                >
+                  <Download className="size-3.5" />
+                  Install
+                </button>
+              )}
             </div>
           </Card>
 

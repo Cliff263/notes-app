@@ -1,7 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CalendarClock, Clock, MapPin } from "lucide-react";
+import { CalendarClock, Clock, FileText, MapPin } from "lucide-react";
+import Link from "next/link";
+import { useShallow } from "zustand/react/shallow";
+import { ROUTES } from "@/lib/routes";
+import { useNotesStore } from "@/store/notes-store";
 import type { CalendarEvent } from "@/lib/types";
 import {
   cn,
@@ -24,6 +28,15 @@ export function UpcomingPanel({
   onCreateOn: (day: Date) => void;
 }) {
   const now = useNow();
+  const select = useNotesStore((state) => state.select);
+  const notes = useNotesStore(useShallow((state) => state.notes));
+
+  // Notes carrying a due date show alongside the schedule.
+  const dueNotes = notes
+    .filter((note) => note.dueAt && !note.deletedAt && !note.archived)
+    .filter((note) => new Date(note.dueAt!).getTime() >= now - 86_400_000)
+    .sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
+    .slice(0, 5);
 
   const dayEvents = events.filter((event) =>
     isSameDay(new Date(event.startsAt), selectedDay),
@@ -70,6 +83,32 @@ export function UpcomingPanel({
                 onClick={() => onOpenEvent(event)}
               />
             ))}
+          </div>
+        )}
+
+        {dueNotes.length > 0 && (
+          <div className="mt-7">
+            <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-2">
+              Notes due
+            </p>
+            <div className="space-y-1.5">
+              {dueNotes.map((note) => (
+                <Link
+                  key={note.id}
+                  href={ROUTES.all}
+                  onClick={() => select(note.id)}
+                  className="flex items-center gap-2 rounded-lg border border-line bg-card px-2.5 py-2 transition hover:bg-card-hover"
+                >
+                  <FileText className="size-3.5 shrink-0 text-glow-2" />
+                  <span className="min-w-0 flex-1 truncate text-[12px]">
+                    {note.title || "Untitled note"}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-muted-2">
+                    {relativeDayLabel(note.dueAt!)}
+                  </span>
+                </Link>
+              ))}
+            </div>
           </div>
         )}
 

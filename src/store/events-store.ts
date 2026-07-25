@@ -11,6 +11,8 @@ export type EventDraft = {
   endsAt: string;
   allDay: boolean;
   color: string;
+  /** Set when the event was created from a note. */
+  noteId?: string | null;
 };
 
 type EventsState = {

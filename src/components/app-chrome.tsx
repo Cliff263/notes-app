@@ -2,6 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { CommandPalette } from "./command-palette";
+import { OfflineIndicator } from "./offline-indicator";
 import { Shortcuts } from "./shortcuts";
 
 /**
@@ -16,6 +17,7 @@ export function AppChrome() {
     <>
       <CommandPalette />
       <Shortcuts />
+      <OfflineIndicator />
     </>
   );
 }

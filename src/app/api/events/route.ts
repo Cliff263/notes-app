@@ -45,6 +45,7 @@ export async function POST(request: Request) {
         endsAt,
         allDay: Boolean(body.allDay),
         color: typeof body.color === "string" ? body.color : "violet",
+        noteId: typeof body.noteId === "string" ? body.noteId : null,
       })
       .returning();
 

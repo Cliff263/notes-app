@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { queueRequest } from "@/lib/outbox";
 import type { Note, NoteFilter, SortKey, ViewMode } from "@/lib/types";
 
 type NotesState = {
@@ -65,10 +66,16 @@ function scheduleSync(id: string, patch: Partial<Note>, delay = 500) {
     id,
     setTimeout(() => {
       timers.delete(id);
-      void fetch(`/api/notes/${id}`, {
+      const url = `/api/notes/${id}`;
+      const body = JSON.stringify(patch);
+
+      void fetch(url, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
+        body,
+      }).catch(() => {
+        // Offline: keep the edit and replay it when the connection is back.
+        queueRequest(url, "PATCH", body);
       });
     }, delay),
   );

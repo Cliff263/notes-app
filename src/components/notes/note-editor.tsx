@@ -1,10 +1,14 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import Link from "next/link";
+import { useShallow } from "zustand/react/shallow";
 import {
   Archive,
   ArchiveRestore,
   Bold,
+  CalendarClock,
+  CalendarPlus,
   ChevronLeft,
   ChevronRight,
   Code,
@@ -30,9 +34,19 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { continuationFor } from "@/lib/markdown";
+import { ROUTES } from "@/lib/routes";
 import { CATEGORIES, type ExportFormat, type Note } from "@/lib/types";
 import { useBreakpoint } from "@/lib/use-media-query";
-import { cn, longDateTime, readingTime, wordCount } from "@/lib/utils";
+import {
+  cn,
+  EVENT_COLOR_VALUES,
+  longDateTime,
+  readingTime,
+  shortDate,
+  stripMarkdown,
+  wordCount,
+} from "@/lib/utils";
+import { useEventsStore } from "@/store/events-store";
 import { MarkdownPreview } from "./markdown-preview";
 import { useNotesStore } from "@/store/notes-store";
 
@@ -103,6 +117,20 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [mode, setMode] = useState<"write" | "preview">("write");
+  const [scheduling, setScheduling] = useState(false);
+
+  const createEvent = useEventsStore((state) => state.createEvent);
+  const events = useEventsStore(useShallow((state) => state.events));
+  const loadEvents = useEventsStore((state) => state.load);
+  const eventsStatus = useEventsStore((state) => state.status);
+
+  const linkedEvents = events.filter((event) => event.noteId === note.id);
+  const scheduled = linkedEvents.length > 0;
+
+  useEffect(() => {
+    // The editor needs events to show what this note is already linked to.
+    if (eventsStatus === "idle") void loadEvents();
+  }, [eventsStatus, loadEvents]);
   const menuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -191,6 +219,27 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     setMenuOpen(false);
     setExportOpen(false);
     window.location.href = `/api/notes/${note.id}/export?format=${format}`;
+  }
+
+  /** Creates an hour-long event from the note, linked both ways. */
+  async function addToCalendar() {
+    setScheduling(true);
+    const start = note.dueAt ? new Date(note.dueAt) : new Date();
+    if (!note.dueAt) start.setHours(start.getHours() + 1, 0, 0, 0);
+
+    const ok = await createEvent({
+      title: note.title || "Untitled note",
+      description: stripMarkdown(note.content).slice(0, 240),
+      location: "",
+      startsAt: start.toISOString(),
+      endsAt: new Date(start.getTime() + 60 * 60_000).toISOString(),
+      allDay: false,
+      color: "violet",
+      noteId: note.id,
+    });
+
+    if (ok && !note.dueAt) updateNote(note.id, { dueAt: start.toISOString() });
+    setScheduling(false);
   }
 
   function addTag() {
@@ -394,7 +443,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 px-4 pt-2">
+      <div className="flex flex-wrap items-center gap-2 px-4 pt-2">
         <Hash className="size-3.5 text-muted-2" />
         <input
           value={tagDraft}
@@ -409,7 +458,65 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
           placeholder="Add tag..."
           className="h-7 w-40 rounded-md border border-line field-sm bg-input px-2 transition focus:border-line-strong"
         />
+
+        {/* Due date, which also puts the note on the calendar */}
+        <label className="flex items-center gap-1.5 rounded-md border border-line bg-input px-2 py-1 text-[11px] text-muted-2">
+          <CalendarClock className="size-3.5" />
+          <input
+            type="date"
+            value={note.dueAt ? note.dueAt.slice(0, 10) : ""}
+            onChange={(event) =>
+              updateNote(note.id, {
+                dueAt: event.target.value
+                  ? new Date(`${event.target.value}T09:00`).toISOString()
+                  : null,
+              })
+            }
+            className="field-sm bg-transparent text-muted outline-none"
+          />
+          {note.dueAt && (
+            <button
+              type="button"
+              aria-label="Clear due date"
+              onClick={() => updateNote(note.id, { dueAt: null })}
+              className="text-muted-2 transition hover:text-foreground"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </label>
+
+        <button
+          type="button"
+          onClick={addToCalendar}
+          disabled={scheduling}
+          className="flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:bg-card-hover hover:text-foreground disabled:opacity-50"
+        >
+          <CalendarPlus className="size-3.5" />
+          {scheduled ? "Added to calendar" : "Add to calendar"}
+        </button>
       </div>
+
+      {linkedEvents.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pt-2">
+          {linkedEvents.map((event) => (
+            <Link
+              key={event.id}
+              href={ROUTES.calendar}
+              className="flex items-center gap-1.5 rounded-md border border-line bg-card px-2 py-1 text-[11px] text-muted transition hover:text-foreground"
+            >
+              <span
+                className="event-dot size-1.5 rounded-full"
+                style={{
+                  background: EVENT_COLOR_VALUES[event.color],
+                  color: EVENT_COLOR_VALUES[event.color],
+                }}
+              />
+              {shortDate(event.startsAt)} · {event.title}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3">
         <p className="text-[11px] text-muted-2">
