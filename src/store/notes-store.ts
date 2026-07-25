@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { Note, NoteFilter, ViewMode } from "@/lib/types";
+import type { Note, NoteFilter, SortKey, ViewMode } from "@/lib/types";
 
 type NotesState = {
   notes: Note[];
@@ -10,6 +10,7 @@ type NotesState = {
 
   selectedId: string | null;
   search: string;
+  sort: SortKey;
   view: ViewMode;
   /** Desktop: the sidebar column is collapsible. */
   sidebarOpen: boolean;
@@ -19,6 +20,7 @@ type NotesState = {
   load: () => Promise<void>;
   select: (id: string | null) => void;
   setSearch: (value: string) => void;
+  setSort: (sort: SortKey) => void;
   setView: (view: ViewMode) => void;
   toggleSidebar: () => void;
   setDrawerOpen: (open: boolean) => void;
@@ -56,6 +58,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
   selectedId: null,
   search: "",
+  sort: "updated",
   view: "list",
   sidebarOpen: true,
   drawerOpen: false,
@@ -82,6 +85,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
   select: (selectedId) => set({ selectedId }),
   setSearch: (search) => set({ search }),
+  setSort: (sort) => set({ sort }),
   setView: (view) => set({ view }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
@@ -146,11 +150,23 @@ export const useNotesStore = create<NotesState>((set, get) => ({
  * The route decides which notes are on screen, so filtering is a plain function
  * rather than store state.
  */
-export function filterNotes(notes: Note[], filter: NoteFilter, search: string) {
+export function filterNotes(
+  notes: Note[],
+  filter: NoteFilter,
+  search: string,
+  sort: SortKey = "updated",
+) {
   const query = search.trim().toLowerCase();
 
   return notes
     .filter((note) => {
+      // Trashed notes only ever appear in the trash.
+      if (filter.kind === "trash") {
+        if (!note.deletedAt) return false;
+      } else if (note.deletedAt) {
+        return false;
+      }
+
       switch (filter.kind) {
         case "favorites":
           if (!note.favorite || note.archived) return false;
@@ -160,6 +176,8 @@ export function filterNotes(notes: Note[], filter: NoteFilter, search: string) {
           break;
         case "archive":
           if (!note.archived) return false;
+          break;
+        case "trash":
           break;
         case "category":
           if (note.category !== filter.value || note.archived) return false;
@@ -181,15 +199,28 @@ export function filterNotes(notes: Note[], filter: NoteFilter, search: string) {
       return true;
     })
     .sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      return b.updatedAt.localeCompare(a.updatedAt);
+      // Pinned notes stay on top of every ordering except the trash.
+      if (filter.kind !== "trash" && a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+
+      switch (sort) {
+        case "created":
+          return b.createdAt.localeCompare(a.createdAt);
+        case "title":
+          return (a.title || "Untitled note").localeCompare(b.title || "Untitled note");
+        case "length":
+          return b.content.length - a.content.length;
+        default:
+          return b.updatedAt.localeCompare(a.updatedAt);
+      }
     });
 }
 
 export function selectAllTags(state: NotesState) {
   const tags = new Set<string>();
   for (const note of state.notes) {
-    if (!note.archived) for (const tag of note.tags) tags.add(tag);
+    if (!note.archived && !note.deletedAt) {
+      for (const tag of note.tags) tags.add(tag);
+    }
   }
   return [...tags].sort();
 }
@@ -198,7 +229,7 @@ export function selectAllTags(state: NotesState) {
 export function selectTagCounts(state: NotesState) {
   const counts: Record<string, number> = {};
   for (const note of state.notes) {
-    if (note.archived) continue;
+    if (note.archived || note.deletedAt) continue;
     for (const tag of note.tags) counts[tag] = (counts[tag] ?? 0) + 1;
   }
   return counts;
@@ -207,20 +238,24 @@ export function selectTagCounts(state: NotesState) {
 export function selectCategoryCounts(state: NotesState) {
   const counts: Record<string, number> = {};
   for (const note of state.notes) {
-    if (note.archived) continue;
+    if (note.archived || note.deletedAt) continue;
     counts[note.category] = (counts[note.category] ?? 0) + 1;
   }
   return counts;
 }
 
 export function selectArchivedCount(state: NotesState) {
-  return state.notes.filter((note) => note.archived).length;
+  return state.notes.filter((note) => note.archived && !note.deletedAt).length;
 }
 
 export function selectFavoriteCount(state: NotesState) {
-  return state.notes.filter((note) => note.favorite && !note.archived).length;
+  return state.notes.filter(
+    (note) => note.favorite && !note.archived && !note.deletedAt,
+  ).length;
 }
 
 export function selectPinnedCount(state: NotesState) {
-  return state.notes.filter((note) => note.pinned && !note.archived).length;
+  return state.notes.filter(
+    (note) => note.pinned && !note.archived && !note.deletedAt,
+  ).length;
 }

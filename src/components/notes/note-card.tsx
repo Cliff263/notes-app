@@ -1,16 +1,18 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Pin, Star } from "lucide-react";
+import { CalendarClock, Pin, RotateCcw, Star } from "lucide-react";
 import type { Note } from "@/lib/types";
-import { cn, shortDate } from "@/lib/utils";
+import { cn, readingTime, relativeTime, shortDate, stripMarkdown } from "@/lib/utils";
 import { useNotesStore } from "@/store/notes-store";
 
 export function NoteCard({ note, selected }: { note: Note; selected: boolean }) {
   const select = useNotesStore((state) => state.select);
   const updateNote = useNotesStore((state) => state.updateNote);
 
-  const excerpt = note.content.replace(/\s+/g, " ").trim();
+  const excerpt = stripMarkdown(note.content);
+  const minutes = readingTime(note.content);
+  const trashed = Boolean(note.deletedAt);
 
   return (
     <motion.article
@@ -48,12 +50,33 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
         <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-tight">
           {note.title || "Untitled note"}
         </h3>
+
+        {trashed && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              updateNote(note.id, { deletedAt: null });
+            }}
+            className="flex shrink-0 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[10px] text-muted transition hover:text-foreground"
+          >
+            <RotateCcw className="size-3" />
+            Restore
+          </button>
+        )}
       </div>
 
-      <div className="mt-2 pl-[22px]">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-[22px]">
         <span className="inline-flex rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10px] text-muted">
           {note.category}
         </span>
+
+        {note.dueAt && (
+          <span className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10px] text-glow-2">
+            <CalendarClock className="size-2.5" />
+            {shortDate(note.dueAt)}
+          </span>
+        )}
       </div>
 
       {excerpt && (
@@ -72,13 +95,35 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
               #{tag}
             </span>
           ))}
+          {note.tags.length > 3 && (
+            <span className="text-[10px] text-muted-2">+{note.tags.length - 3}</span>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          {note.favorite && (
-            <Star className="size-3 fill-accent text-accent" aria-label="Favorite" />
-          )}
-          <span className="text-[10px] text-muted-2">{shortDate(note.updatedAt)}</span>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              updateNote(note.id, { favorite: !note.favorite });
+            }}
+            aria-label={note.favorite ? "Remove from favorites" : "Add to favorites"}
+            className={cn(
+              "transition",
+              note.favorite
+                ? "text-accent"
+                : "hover-reveal text-muted-2 hover:text-foreground",
+            )}
+          >
+            <Star className={cn("size-3", note.favorite && "fill-accent")} />
+          </button>
+
+          <span
+            className="text-[10px] text-muted-2"
+            title={`${minutes} min read`}
+          >
+            {relativeTime(note.updatedAt)}
+          </span>
         </div>
       </div>
     </motion.article>

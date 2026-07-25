@@ -11,6 +11,7 @@ import {
   monthGrid,
   timeLabel,
 } from "@/lib/utils";
+import { useBreakpoint } from "@/lib/use-media-query";
 import { dayKey, selectEventsByDay } from "@/store/events-store";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -34,6 +35,8 @@ export function CalendarView({
 }) {
   const [direction, setDirection] = useState<1 | -1>(1);
   const today = new Date();
+  // Phones get a dot grid; the day's detail lives in the panel underneath.
+  const { isPhone: compact } = useBreakpoint();
 
   const cells = useMemo(
     () => monthGrid(cursor.getFullYear(), cursor.getMonth()),
@@ -63,25 +66,40 @@ export function CalendarView({
     );
   }).length;
 
+  const todayCount = events.filter((event) =>
+    isSameDay(new Date(event.startsAt), today),
+  ).length;
+
+  const weekAhead = new Date(today);
+  weekAhead.setDate(weekAhead.getDate() + 7);
+  const weekCount = events.filter((event) => {
+    const date = new Date(event.startsAt);
+    return date >= today && date <= weekAhead;
+  }).length;
+
   return (
-    <section className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-surface">
+    <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-surface max-lg:min-h-[70vh] lg:h-full">
       <div className="pointer-events-none absolute inset-0 aurora opacity-60" />
       <div className="pointer-events-none absolute inset-0 grid-bg opacity-30" />
 
-      <header className="relative flex flex-wrap items-center gap-3 border-b border-line px-5 py-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="glow-text text-[22px] font-semibold tracking-tight">
+      <header className="relative flex flex-col gap-3 border-b border-line px-4 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
+        <div className="min-w-0 sm:flex-1">
+          <h1 className="glow-text text-[20px] font-semibold tracking-tight sm:text-[22px]">
             {cursor.toLocaleDateString("en-US", { month: "long" })}{" "}
             {cursor.getFullYear()}
           </h1>
-          <p className="mt-0.5 text-[11px] text-muted-2">
-            {monthEventCount === 0
-              ? "Nothing scheduled this month"
-              : `${monthEventCount} ${monthEventCount === 1 ? "event" : "events"} scheduled`}
-          </p>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <Chip
+              label={`${monthEventCount} this month`}
+              tone={monthEventCount ? "var(--glow-1)" : undefined}
+            />
+            <Chip label={`${todayCount} today`} tone={todayCount ? "var(--glow-2)" : undefined} />
+            <Chip label={`${weekCount} next 7 days`} />
+          </div>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 max-sm:order-3">
           <NavButton label="Previous month" onClick={() => move(-1)}>
             <ChevronLeft className="size-4" />
           </NavButton>
@@ -100,7 +118,7 @@ export function CalendarView({
         <button
           type="button"
           onClick={() => onCreateOn(selectedDay)}
-          className="flex items-center gap-1.5 rounded-lg bg-btn px-3 py-1.5 text-[12px] font-medium text-btn-foreground transition hover:opacity-90"
+          className="flex items-center justify-center gap-1.5 rounded-lg bg-btn px-3 py-2 text-[12px] font-medium text-btn-foreground transition hover:opacity-90 max-sm:order-4 max-sm:flex-1 sm:py-1.5"
         >
           <Plus className="size-3.5" />
           New event
@@ -118,7 +136,7 @@ export function CalendarView({
         ))}
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden p-3">
+      <div className="relative min-h-0 flex-1 overflow-hidden p-2 sm:p-3">
         <AnimatePresence mode="wait" initial={false} custom={direction}>
           <motion.div
             key={`${cursor.getFullYear()}-${cursor.getMonth()}`}
@@ -153,7 +171,12 @@ export function CalendarView({
                     isToday && "today-glow border-transparent",
                   )}
                 >
-                  <span className="flex items-center justify-between">
+                  <span
+                    className={cn(
+                      "flex items-center justify-between",
+                      compact && "justify-center",
+                    )}
+                  >
                     <span
                       className={cn(
                         "text-[11px] tabular-nums",
@@ -171,6 +194,7 @@ export function CalendarView({
                       role="button"
                       tabIndex={-1}
                       aria-label="Add event"
+                      hidden={compact}
                       onClick={(clickEvent) => {
                         clickEvent.stopPropagation();
                         onCreateOn(day);
@@ -181,6 +205,24 @@ export function CalendarView({
                     </span>
                   </span>
 
+                  {/*
+                   * A phone cell is too narrow for titles, so it shows a row of
+                   * dots and the day's agenda lives in the panel below.
+                   */}
+                  {compact ? (
+                    <span className="mt-auto flex flex-wrap justify-center gap-[3px] pb-0.5">
+                      {dayEvents.slice(0, 4).map((event) => (
+                        <span
+                          key={event.id}
+                          className="event-dot size-1.5 rounded-full"
+                          style={{
+                            background: EVENT_COLOR_VALUES[event.color],
+                            color: EVENT_COLOR_VALUES[event.color],
+                          }}
+                        />
+                      ))}
+                    </span>
+                  ) : (
                   <span className="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-hidden">
                     {dayEvents.slice(0, 3).map((event) => (
                       <span
@@ -216,6 +258,7 @@ export function CalendarView({
                       </span>
                     )}
                   </span>
+                  )}
                 </motion.button>
               );
             })}
@@ -223,6 +266,25 @@ export function CalendarView({
         </AnimatePresence>
       </div>
     </section>
+  );
+}
+
+function Chip({ label, tone }: { label: string; tone?: string }) {
+  return (
+    <span
+      className="rounded-md border border-line px-1.5 py-0.5 text-[10px] text-muted-2"
+      style={
+        tone
+          ? {
+              color: tone,
+              borderColor: `color-mix(in srgb, ${tone} 40%, transparent)`,
+              background: `color-mix(in srgb, ${tone} 10%, transparent)`,
+            }
+          : undefined
+      }
+    >
+      {label}
+    </span>
   );
 }
 

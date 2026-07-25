@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  type AnyPgColumn,
   integer,
   pgTable,
   primaryKey,
@@ -89,6 +90,10 @@ export const notes = pgTable(
     pinned: boolean("pinned").notNull().default(false),
     favorite: boolean("favorite").notNull().default(false),
     archived: boolean("archived").notNull().default(false),
+    /** Set when the note is in the trash; cleared on restore. */
+    deletedAt: timestamp("deletedAt", { mode: "date", withTimezone: true }),
+    /** Optional due date, shown in the calendar and the upcoming panel. */
+    dueAt: timestamp("dueAt", { mode: "date", withTimezone: true }),
     createdAt: timestamp("createdAt", { mode: "date", withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -115,6 +120,10 @@ export const events = pgTable(
     endsAt: timestamp("endsAt", { mode: "date", withTimezone: true }).notNull(),
     allDay: boolean("allDay").notNull().default(false),
     color: text("color").notNull().default("violet"),
+    /** Optional link back to the note this event came from. */
+    noteId: text("noteId").references((): AnyPgColumn => notes.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("createdAt", { mode: "date", withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -19,6 +19,10 @@ export type Note = {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Set when the note is in the trash. */
+  deletedAt: string | null;
+  /** Optional due date; surfaces in the calendar. */
+  dueAt: string | null;
 };
 
 export const EVENT_COLORS = [
@@ -40,6 +44,8 @@ export type CalendarEvent = {
   endsAt: string;
   allDay: boolean;
   color: EventColor;
+  /** Set when the event was created from a note. */
+  noteId: string | null;
   createdAt: string;
 };
 
@@ -49,8 +55,18 @@ export type NoteFilter =
   | { kind: "favorites" }
   | { kind: "pinned" }
   | { kind: "archive" }
+  | { kind: "trash" }
   | { kind: "category"; value: string }
   | { kind: "tag"; value: string };
+
+export const SORT_OPTIONS = [
+  { value: "updated", label: "Last edited" },
+  { value: "created", label: "Date created" },
+  { value: "title", label: "Title" },
+  { value: "length", label: "Length" },
+] as const;
+
+export type SortKey = (typeof SORT_OPTIONS)[number]["value"];
 
 export const EXPORT_FORMATS = ["pdf", "docx", "md", "txt"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];

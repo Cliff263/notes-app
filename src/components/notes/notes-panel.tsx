@@ -3,18 +3,20 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArchiveRestore,
+  ArrowUpDown,
+  Check,
   LayoutGrid,
   List,
   Menu,
   PanelLeft,
   Search,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { describeFilter } from "@/lib/routes";
-import type { NoteFilter } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { SORT_OPTIONS, type NoteFilter } from "@/lib/types";
+import { cn, wordCount } from "@/lib/utils";
 import { filterNotes, useNotesStore } from "@/store/notes-store";
 import { NoteCard } from "./note-card";
 
@@ -28,16 +30,21 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
   const selectedId = useNotesStore((state) => state.selectedId);
   const toggleSidebar = useNotesStore((state) => state.toggleSidebar);
   const setDrawerOpen = useNotesStore((state) => state.setDrawerOpen);
+  const sort = useNotesStore((state) => state.sort);
   const createNote = useNotesStore((state) => state.createNote);
   const updateNote = useNotesStore((state) => state.updateNote);
 
   const notes = useMemo(
-    () => filterNotes(allNotes, filter, search),
-    [allNotes, filter, search],
+    () => filterNotes(allNotes, filter, search, sort),
+    [allNotes, filter, search, sort],
   );
   const copy = describeFilter(filter);
 
   const archivedIds = notes.map((note) => note.id);
+  const totalWords = useMemo(
+    () => notes.reduce((sum, note) => sum + wordCount(note.content), 0),
+    [notes],
+  );
 
   return (
     <section className="flex h-full min-w-0 flex-1 flex-col border-r border-line bg-surface">
@@ -91,31 +98,52 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
         <ThemeToggle className="shrink-0" />
       </header>
 
-      {/* Which view you're in, so the list is never ambiguous */}
-      <div className="flex items-end justify-between gap-3 border-b border-line px-4 py-3">
-        <div className="min-w-0">
-          <h1 className="truncate text-[15px] font-semibold tracking-tight">
-            {copy.title}
-          </h1>
-          <p className="mt-0.5 truncate text-[11px] text-muted-2">
-            {notes.length} {notes.length === 1 ? "note" : "notes"} · {copy.description}
-          </p>
-        </div>
+      {/* The view hero: which slice you're looking at, and what you can do to it */}
+      <div className="relative overflow-hidden border-b border-line px-4 py-3.5">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-[0.13]"
+          style={{
+            background: `radial-gradient(110% 130% at 0% 0%, ${copy.accent}, transparent 62%)`,
+          }}
+        />
 
-        {filter.kind === "archive" && notes.length > 0 && (
-          <button
-            type="button"
-            onClick={() => {
-              for (const id of archivedIds) {
-                updateNote(id, { archived: false });
-              }
-            }}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] text-muted transition hover:bg-card-hover hover:text-foreground"
+        <div className="relative flex items-center gap-3">
+          <span
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-line bg-card"
+            style={{ color: copy.accent }}
           >
-            <ArchiveRestore className="size-3.5" />
-            Restore all
-          </button>
-        )}
+            <copy.icon className="size-4" />
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-[15px] font-semibold tracking-tight">
+              {copy.title}
+            </h1>
+            <p className="mt-0.5 truncate text-[11px] text-muted-2">
+              {notes.length} {notes.length === 1 ? "note" : "notes"}
+              {totalWords > 0 && ` · ${totalWords.toLocaleString()} words`} ·{" "}
+              {copy.description}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            {filter.kind === "archive" && notes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  for (const id of archivedIds) updateNote(id, { archived: false });
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] text-muted transition hover:bg-card-hover hover:text-foreground"
+              >
+                <ArchiveRestore className="size-3.5" />
+                <span className="hidden sm:inline">Restore all</span>
+              </button>
+            )}
+
+            <SortMenu />
+          </div>
+        </div>
       </div>
 
       <div className="pb-navbar min-h-0 flex-1 overflow-y-auto p-3 scroll-thin">
@@ -154,6 +182,68 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
         )}
       </div>
     </section>
+  );
+}
+
+function SortMenu() {
+  const sort = useNotesStore((state) => state.sort);
+  const setSort = useNotesStore((state) => state.setSort);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
+
+  const active = SORT_OPTIONS.find((option) => option.value === sort);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-label="Sort notes"
+        className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] text-muted transition hover:bg-card-hover hover:text-foreground"
+      >
+        <ArrowUpDown className="size-3.5" />
+        <span className="hidden sm:inline">{active?.label}</span>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+            transition={{ duration: 0.14 }}
+            className="absolute right-0 top-9 z-30 w-40 overflow-hidden rounded-lg border border-line bg-card shadow-xl"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  setSort(option.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between px-3 py-2 text-[12px] transition hover:bg-card-hover",
+                  option.value === sort ? "text-foreground" : "text-muted",
+                )}
+              >
+                {option.label}
+                {option.value === sort && <Check className="size-3.5" />}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

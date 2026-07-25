@@ -4,6 +4,39 @@ export function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
+/** Roughly 200 words a minute, floor of one. */
+export function readingTime(text: string) {
+  return Math.max(1, Math.round(wordCount(text) / 200));
+}
+
+/** Markdown syntax removed, for card excerpts and search snippets. */
+export function stripMarkdown(text: string) {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** "just now" / "12m ago" / "3h ago" / "Jan 15" */
+export function relativeTime(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const seconds = Math.round((Date.now() - date.getTime()) / 1000);
+
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604_800) return `${Math.floor(seconds / 86_400)}d ago`;
+  return shortDate(date);
+}
+
 export function wordCount(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return 0;

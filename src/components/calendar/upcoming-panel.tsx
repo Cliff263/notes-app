@@ -35,7 +35,7 @@ export function UpcomingPanel({
     .slice(0, 6);
 
   return (
-    <aside className="hidden h-full w-[320px] shrink-0 flex-col border-l border-line bg-panel xl:flex">
+    <aside className="flex w-full shrink-0 flex-col border-t border-line bg-panel lg:h-full lg:w-[320px] lg:border-l lg:border-t-0">
       <header className="border-b border-line px-4 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-2">
           {relativeDayLabel(selectedDay)}
@@ -49,7 +49,7 @@ export function UpcomingPanel({
         </h2>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 scroll-thin">
+      <div className="pb-navbar px-4 py-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pb-4 scroll-thin">
         {dayEvents.length === 0 ? (
           <button
             type="button"
