@@ -175,7 +175,7 @@ export function CalendarView({
                         clickEvent.stopPropagation();
                         onCreateOn(day);
                       }}
-                      className="flex size-4 items-center justify-center rounded text-muted-2 opacity-0 transition hover:text-foreground group-hover:opacity-100"
+                      className="hover-reveal flex size-4 items-center justify-center rounded text-muted-2 transition hover:text-foreground"
                     >
                       <Plus className="size-3" />
                     </span>

@@ -5,7 +5,10 @@ import { Hash, Search } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { MobileNav } from "@/components/mobile-nav";
+import { MobileTopBar } from "@/components/mobile-top-bar";
 import { Sidebar } from "@/components/sidebar";
+import { SidebarDrawer } from "@/components/sidebar-drawer";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ROUTES } from "@/lib/routes";
 import { useNotesStore } from "@/store/notes-store";
@@ -51,17 +54,20 @@ export default function TagsPage() {
             animate={{ width: 248, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="h-full shrink-0 overflow-hidden"
+            className="hidden h-full shrink-0 overflow-hidden lg:block"
           >
             <Sidebar />
           </motion.div>
         )}
       </AnimatePresence>
 
+      <SidebarDrawer />
+
       <section className="relative min-w-0 flex-1 overflow-y-auto bg-surface scroll-thin">
+        <MobileTopBar title="Tags" />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-52 aurora opacity-50" />
 
-        <div className="relative mx-auto w-full max-w-[860px] px-6 py-9">
+        <div className="pb-navbar relative mx-auto w-full max-w-[860px] px-4 py-7 sm:px-6 sm:py-9">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <motion.h1
@@ -77,17 +83,17 @@ export default function TagsPage() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="relative">
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <div className="relative min-w-0 flex-1 sm:flex-none">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-2" />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Filter tags..."
-                  className="h-9 w-[190px] rounded-lg border border-line bg-input pl-9 pr-3 text-[13px] transition focus:border-line-strong"
+                  className="field h-9 w-full rounded-lg border border-line bg-input pl-9 pr-3 transition focus:border-line-strong sm:w-[190px]"
                 />
               </div>
-              <ThemeToggle />
+              <ThemeToggle className="hidden lg:flex" />
             </div>
           </div>
 
@@ -145,6 +151,8 @@ export default function TagsPage() {
           )}
         </div>
       </section>
+
+      <MobileNav />
     </main>
   );
 }

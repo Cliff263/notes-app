@@ -4,7 +4,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, Download, Loader2, LogOut, Moon, Sun, Trash2 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
+import { MobileNav } from "@/components/mobile-nav";
+import { MobileTopBar } from "@/components/mobile-top-bar";
 import { Sidebar } from "@/components/sidebar";
+import { SidebarDrawer } from "@/components/sidebar-drawer";
 import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { useNotesStore } from "@/store/notes-store";
@@ -77,17 +80,20 @@ export default function SettingsPage() {
             animate={{ width: 248, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="h-full shrink-0 overflow-hidden"
+            className="hidden h-full shrink-0 overflow-hidden lg:block"
           >
             <Sidebar />
           </motion.div>
         )}
       </AnimatePresence>
 
+      <SidebarDrawer />
+
       <section className="relative min-w-0 flex-1 overflow-y-auto bg-surface scroll-thin">
+        <MobileTopBar title="Settings" />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-56 aurora opacity-50" />
 
-        <div className="relative mx-auto w-full max-w-[640px] px-6 py-10">
+        <div className="pb-navbar relative mx-auto w-full max-w-[640px] px-4 py-8 sm:px-6 sm:py-10">
           <motion.h1
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -108,7 +114,7 @@ export default function SettingsPage() {
                   onChange={(event) => setName(event.target.value)}
                   onBlur={saveName}
                   placeholder="Your name"
-                  className="h-9 flex-1 rounded-lg border border-line bg-input px-3 text-[13px] transition focus:border-line-strong"
+                  className="h-9 flex-1 rounded-lg border border-line field bg-input px-3 transition focus:border-line-strong"
                 />
                 <button
                   type="button"
@@ -287,6 +293,8 @@ export default function SettingsPage() {
           </Card>
         </div>
       </section>
+
+      <MobileNav />
     </main>
   );
 }

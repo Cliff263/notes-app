@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Archive,
   ArchiveRestore,
+  ChevronLeft,
   ChevronRight,
   Copy,
   Download,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CATEGORIES, type ExportFormat, type Note } from "@/lib/types";
+import { useBreakpoint } from "@/lib/use-media-query";
 import { cn, longDateTime, wordCount } from "@/lib/utils";
 import { useNotesStore } from "@/store/notes-store";
 
@@ -26,33 +28,60 @@ export function NoteEditor() {
   const note = useNotesStore((state) =>
     state.notes.find((item) => item.id === state.selectedId),
   );
+  const { isDesktop } = useBreakpoint();
 
-  return (
-    <section className="hidden h-full w-[46%] min-w-[380px] shrink-0 flex-col bg-surface lg:flex">
-      <AnimatePresence mode="wait">
-        {note ? (
-          <EditorBody key={note.id} note={note} />
-        ) : (
-          <motion.div
-            key="empty"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center"
+  /*
+   * One editor, in one place: the pane on desktop, a sheet below lg. Picking
+   * here rather than hiding one with CSS keeps a single textarea in the DOM,
+   * so assistive tech and autofocus never see two copies of the same note.
+   */
+  if (!isDesktop) {
+    return (
+      <AnimatePresence>
+        {note && (
+          <motion.section
+            key={note.id}
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", stiffness: 380, damping: 38 }}
+            className="fixed inset-0 z-40 flex flex-col bg-surface"
           >
-            <p className="text-[13px] font-medium">No note selected</p>
-            <p className="max-w-[280px] text-[12px] text-muted-2">
-              Pick a note from the list to read it, or create a new one to start
-              writing.
-            </p>
-          </motion.div>
+            <EditorBody note={note} sheet />
+          </motion.section>
         )}
       </AnimatePresence>
-    </section>
+    );
+  }
+
+  return (
+    <>
+      <section className="hidden h-full w-[46%] min-w-[380px] shrink-0 flex-col bg-surface lg:flex">
+        <AnimatePresence mode="wait">
+          {note ? (
+            <EditorBody key={note.id} note={note} />
+          ) : (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center"
+            >
+              <p className="text-[13px] font-medium">No note selected</p>
+              <p className="max-w-[280px] text-[12px] text-muted-2">
+                Pick a note from the list to read it, or create a new one to start
+                writing.
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </section>
+    </>
   );
 }
 
-function EditorBody({ note }: { note: Note }) {
+function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const updateNote = useNotesStore((state) => state.updateNote);
   const deleteNote = useNotesStore((state) => state.deleteNote);
   const duplicateNote = useNotesStore((state) => state.duplicateNote);
@@ -103,12 +132,23 @@ function EditorBody({ note }: { note: Note }) {
       transition={{ duration: 0.2, ease: "easeOut" }}
       className="flex h-full flex-col"
     >
-      <div className="flex items-center gap-2 px-4 pt-3">
+      <div className={cn("flex items-center gap-2 px-4 pt-3", sheet && "safe-top")}>
+        {sheet && (
+          <button
+            type="button"
+            aria-label="Back to list"
+            onClick={() => select(null)}
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-card-hover hover:text-foreground"
+          >
+            <ChevronLeft className="size-5" />
+          </button>
+        )}
+
         <input
           value={note.title}
           onChange={(event) => updateNote(note.id, { title: event.target.value })}
           placeholder="Untitled note"
-          className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-input px-3 text-[13px] font-medium transition focus:border-line-strong"
+          className="field h-9 min-w-0 flex-1 rounded-lg border border-line bg-input px-3 font-medium transition focus:border-line-strong"
         />
 
         <IconAction
@@ -224,9 +264,11 @@ function EditorBody({ note }: { note: Note }) {
           </AnimatePresence>
         </div>
 
-        <IconAction label="Close note" onClick={() => select(null)}>
-          <X className="size-4" />
-        </IconAction>
+        {!sheet && (
+          <IconAction label="Close note" onClick={() => select(null)}>
+            <X className="size-4" />
+          </IconAction>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 px-4 pt-3">
@@ -238,7 +280,7 @@ function EditorBody({ note }: { note: Note }) {
               archived: event.target.value === "Archive",
             })
           }
-          className="h-7 rounded-md border border-line bg-input px-2 text-[11px] text-muted transition hover:text-foreground"
+          className="h-7 rounded-md border border-line field-sm bg-input px-2 text-muted transition hover:text-foreground"
         >
           {CATEGORIES.map((category) => (
             <option key={category} value={category}>
@@ -286,7 +328,7 @@ function EditorBody({ note }: { note: Note }) {
           }}
           onBlur={addTag}
           placeholder="Add tag..."
-          className="h-7 w-40 rounded-md border border-line bg-input px-2 text-[11px] transition focus:border-line-strong"
+          className="h-7 w-40 rounded-md border border-line field-sm bg-input px-2 transition focus:border-line-strong"
         />
       </div>
 

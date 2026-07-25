@@ -50,6 +50,7 @@ export function Sidebar() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const createNote = useNotesStore((state) => state.createNote);
+  const setDrawerOpen = useNotesStore((state) => state.setDrawerOpen);
   // These selectors build a fresh array/object, so they need a shallow compare
   // to keep useSyncExternalStore from looping.
   const tags = useNotesStore(useShallow(selectAllTags));
@@ -58,8 +59,12 @@ export function Sidebar() {
   const pinnedCount = useNotesStore(selectPinnedCount);
   const archivedCount = useNotesStore(selectArchivedCount);
 
+  /** Navigating from the drawer should also dismiss it. */
+  const closeDrawer = () => setDrawerOpen(false);
+
   /** A new note inherits the category or tag of the view you're in. */
   async function handleNewNote() {
+    closeDrawer();
     const categoryMatch = /^\/category\/(.+)$/.exec(pathname);
     const tagMatch = /^\/tags\/(.+)$/.exec(pathname);
 
@@ -81,7 +86,17 @@ export function Sidebar() {
   const initial = displayName.charAt(0).toUpperCase();
 
   return (
-    <aside className="flex h-full w-[248px] shrink-0 flex-col border-r border-line bg-panel">
+    <aside
+      /*
+       * Any link inside dismisses the drawer, so navigation from the overlay
+       * behaves the way it does in a native app without wiring a handler to
+       * every single row.
+       */
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("a")) closeDrawer();
+      }}
+      className="flex h-full w-[248px] shrink-0 flex-col border-r border-line bg-panel"
+    >
       <Link href={ROUTES.all} className="flex items-center gap-2 px-4 pt-4 pb-3">
         <span className="flex size-7 items-center justify-center rounded-md border border-line bg-card">
           <FileText className="size-3.5 text-foreground" />

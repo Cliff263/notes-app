@@ -123,7 +123,7 @@ function EventForm({
           value={draft.title}
           onChange={(event) => patch({ title: event.target.value })}
           placeholder="Event title"
-          className="h-10 w-full rounded-lg border border-line bg-input px-3 text-[13px] font-medium transition focus:border-line-strong"
+          className="h-10 w-full rounded-lg border border-line field bg-input px-3 font-medium transition focus:border-line-strong"
         />
 
         <div className="grid grid-cols-2 gap-3">
@@ -141,7 +141,7 @@ function EventForm({
                 );
                 patch({ startsAt, endsAt });
               }}
-              className="h-9 w-full rounded-lg border border-line bg-input px-2.5 text-[12px] transition focus:border-line-strong"
+              className="h-9 w-full rounded-lg border border-line field-sm bg-input px-2.5 transition focus:border-line-strong"
             />
           </label>
 
@@ -151,7 +151,7 @@ function EventForm({
               type="datetime-local"
               value={draft.endsAt}
               onChange={(event) => patch({ endsAt: event.target.value })}
-              className="h-9 w-full rounded-lg border border-line bg-input px-2.5 text-[12px] transition focus:border-line-strong"
+              className="h-9 w-full rounded-lg border border-line field-sm bg-input px-2.5 transition focus:border-line-strong"
             />
           </label>
         </div>
@@ -170,7 +170,7 @@ function EventForm({
           value={draft.location}
           onChange={(event) => patch({ location: event.target.value })}
           placeholder="Location (optional)"
-          className="h-9 w-full rounded-lg border border-line bg-input px-3 text-[12px] transition focus:border-line-strong"
+          className="h-9 w-full rounded-lg border border-line field-sm bg-input px-3 transition focus:border-line-strong"
         />
 
         <textarea
@@ -178,7 +178,7 @@ function EventForm({
           onChange={(event) => patch({ description: event.target.value })}
           placeholder="Notes (optional)"
           rows={3}
-          className="w-full resize-none rounded-lg border border-line bg-input px-3 py-2 text-[12px] leading-relaxed transition focus:border-line-strong scroll-thin"
+          className="w-full resize-none rounded-lg border border-line field-sm bg-input px-3 py-2 leading-relaxed transition focus:border-line-strong scroll-thin"
         />
 
         <div>

@@ -1,7 +1,14 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArchiveRestore, LayoutGrid, List, PanelLeft, Search } from "lucide-react";
+import {
+  ArchiveRestore,
+  LayoutGrid,
+  List,
+  Menu,
+  PanelLeft,
+  Search,
+} from "lucide-react";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -20,6 +27,7 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
   const setView = useNotesStore((state) => state.setView);
   const selectedId = useNotesStore((state) => state.selectedId);
   const toggleSidebar = useNotesStore((state) => state.toggleSidebar);
+  const setDrawerOpen = useNotesStore((state) => state.setDrawerOpen);
   const createNote = useNotesStore((state) => state.createNote);
   const updateNote = useNotesStore((state) => state.updateNote);
 
@@ -34,13 +42,22 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
   return (
     <section className="flex h-full min-w-0 flex-1 flex-col border-r border-line bg-surface">
       <header className="flex items-center gap-2 border-b border-line px-3 py-2.5">
+        {/* Desktop collapses the column; below lg the same control opens the drawer. */}
         <button
           type="button"
           onClick={toggleSidebar}
           aria-label="Toggle sidebar"
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-card-hover hover:text-foreground"
+          className="hidden size-8 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-card-hover hover:text-foreground lg:flex"
         >
           <PanelLeft className="size-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open menu"
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-card-hover hover:text-foreground lg:hidden"
+        >
+          <Menu className="size-5" />
         </button>
 
         <div className="relative min-w-0 flex-1">
@@ -49,7 +66,8 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search notes..."
-            className="h-9 w-full rounded-lg border border-line bg-input pl-9 pr-3 text-[13px] text-foreground transition focus:border-line-strong"
+            data-search-input
+            className="field h-9 w-full rounded-lg border border-line bg-input pl-9 pr-3 text-foreground transition focus:border-line-strong"
           />
         </div>
 
@@ -100,7 +118,7 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 scroll-thin">
+      <div className="pb-navbar min-h-0 flex-1 overflow-y-auto p-3 scroll-thin">
         {status === "loading" && allNotes.length === 0 ? (
           <SkeletonList />
         ) : notes.length === 0 ? (

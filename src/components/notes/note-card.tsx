@@ -39,7 +39,7 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
             "mt-0.5 shrink-0 transition",
             note.pinned
               ? "text-foreground"
-              : "text-muted-2 opacity-0 group-hover:opacity-100 hover:text-foreground",
+              : "hover-reveal text-muted-2 hover:text-foreground",
           )}
         >
           <Pin className={cn("size-3.5", note.pinned && "fill-current")} />

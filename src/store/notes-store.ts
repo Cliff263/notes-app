@@ -11,13 +11,17 @@ type NotesState = {
   selectedId: string | null;
   search: string;
   view: ViewMode;
+  /** Desktop: the sidebar column is collapsible. */
   sidebarOpen: boolean;
+  /** Below lg the sidebar is an overlay drawer instead. */
+  drawerOpen: boolean;
 
   load: () => Promise<void>;
   select: (id: string | null) => void;
   setSearch: (value: string) => void;
   setView: (view: ViewMode) => void;
   toggleSidebar: () => void;
+  setDrawerOpen: (open: boolean) => void;
 
   createNote: (category?: string, tags?: string[]) => Promise<string | null>;
   updateNote: (id: string, patch: Partial<Note>) => void;
@@ -54,6 +58,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   search: "",
   view: "list",
   sidebarOpen: true,
+  drawerOpen: false,
 
   async load() {
     set({ status: "loading" });
@@ -79,6 +84,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   setSearch: (search) => set({ search }),
   setView: (view) => set({ view }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+  setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
 
   /** Seeds the new note with whatever the current route implies. */
   async createNote(category = "Personal", tags = []) {

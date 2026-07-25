@@ -197,7 +197,7 @@ function Field({
         autoComplete={autoComplete}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-lg border border-line bg-input px-3 text-[13px] transition focus:border-line-strong"
+        className="h-10 w-full rounded-lg border border-line field bg-input px-3 transition focus:border-line-strong"
       />
     </label>
   );
