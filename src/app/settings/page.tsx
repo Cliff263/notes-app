@@ -7,8 +7,9 @@ import { useEffect, useState } from "react";
 import { MobileNav } from "@/components/mobile-nav";
 import { MobileTopBar } from "@/components/mobile-top-bar";
 import { Sidebar } from "@/components/sidebar";
-import { SHORTCUTS } from "@/components/shortcuts";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { SidebarDrawer } from "@/components/sidebar-drawer";
+import { TextReveal } from "@/components/motion";
 import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { useAccount, useDeleteAccount, useUpdateAccount } from "@/hooks/use-account";
@@ -85,13 +86,9 @@ export default function SettingsPage() {
         <div className="pointer-events-none absolute inset-x-0 top-0 h-56 aurora opacity-50" />
 
         <div className="pb-navbar relative mx-auto w-full max-w-[640px] px-4 py-8 sm:px-6 sm:py-10">
-          <motion.h1
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glow-text text-[26px] font-semibold tracking-tight"
-          >
-            Settings
-          </motion.h1>
+          <h1 className="glow-text text-[26px] font-semibold tracking-tight">
+            <TextReveal text="Settings" />
+          </h1>
           <p className="mt-1 text-[13px] text-muted">
             Your account, how the workspace looks, and what happens to your data.
           </p>

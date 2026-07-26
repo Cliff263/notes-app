@@ -18,7 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useMemo, useRef, useState, type ComponentType } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { ROUTES } from "@/lib/routes";
 import { cn, stripMarkdown } from "@/lib/utils";
@@ -34,7 +34,13 @@ type Command = {
   run: () => void;
 };
 
-export function CommandPalette() {
+export function CommandPalette({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   const router = useRouter();
   const { toggleTheme } = useTheme();
   const { data: notes = [] } = useNotes();
@@ -42,23 +48,9 @@ export function CommandPalette() {
   const select = useNotesStore((state) => state.select);
   const selectedId = useNotesStore((state) => state.selectedId);
 
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setOpen((value) => !value);
-        setQuery("");
-        setCursor(0);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
 
   const commands = useMemo<Command[]>(() => {
     const go = (path: string) => () => router.push(path);
@@ -163,7 +155,7 @@ export function CommandPalette() {
   function runAt(index: number) {
     const command = results[index];
     if (!command) return;
-    setOpen(false);
+    onClose();
     command.run();
   }
 
@@ -177,7 +169,7 @@ export function CommandPalette() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.14 }}
-          onClick={() => setOpen(false)}
+          onClick={() => onClose()}
           className="fixed inset-0 z-[60] flex items-start justify-center bg-black/60 p-4 pt-[12vh] backdrop-blur-sm"
         >
           <motion.div
@@ -208,7 +200,7 @@ export function CommandPalette() {
                     event.preventDefault();
                     runAt(activeIndex);
                   } else if (event.key === "Escape") {
-                    setOpen(false);
+                    onClose();
                   }
                 }}
                 placeholder="Search notes or jump to a view..."

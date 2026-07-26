@@ -9,6 +9,7 @@ import { MobileTopBar } from "@/components/mobile-top-bar";
 import { Sidebar } from "@/components/sidebar";
 import { SidebarDrawer } from "@/components/sidebar-drawer";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AnimatedNumber, Stagger, StaggerItem, TextReveal } from "@/components/motion";
 import { ROUTES } from "@/lib/routes";
 import { useNotes } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
@@ -64,16 +65,14 @@ export default function TagsPage() {
         <div className="pb-navbar relative mx-auto w-full max-w-[860px] px-4 py-7 sm:px-6 sm:py-9">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <motion.h1
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="glow-text text-[26px] font-semibold tracking-tight"
-              >
-                Tags
-              </motion.h1>
+              <h1 className="glow-text text-[26px] font-semibold tracking-tight">
+                <TextReveal text="Tags" />
+              </h1>
               <p className="mt-1 text-[13px] text-muted">
-                {tags.length} {tags.length === 1 ? "tag" : "tags"} across {totalTagged}{" "}
-                tagged {totalTagged === 1 ? "note" : "notes"}.
+                <AnimatedNumber value={tags.length} />{" "}
+                {tags.length === 1 ? "tag" : "tags"} across{" "}
+                <AnimatedNumber value={totalTagged} /> tagged{" "}
+                {totalTagged === 1 ? "note" : "notes"}.
               </p>
             </div>
 
@@ -104,14 +103,9 @@ export default function TagsPage() {
               </p>
             </div>
           ) : (
-            <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {tags.map((entry, index) => (
-                <motion.div
-                  key={entry.tag}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.24, delay: Math.min(index, 12) * 0.03 }}
-                >
+            <Stagger className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {tags.map((entry) => (
+                <StaggerItem key={entry.tag}>
                   <Link
                     href={ROUTES.tag(entry.tag)}
                     className="group flex h-full flex-col rounded-xl border border-line bg-card p-4 transition hover:border-line-strong hover:bg-card-hover"
@@ -139,9 +133,9 @@ export default function TagsPage() {
                       ))}
                     </span>
                   </Link>
-                </motion.div>
+                </StaggerItem>
               ))}
-            </div>
+            </Stagger>
           )}
         </div>
       </section>

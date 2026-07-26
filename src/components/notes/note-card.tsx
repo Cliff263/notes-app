@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { CalendarClock, Check, Pin, RotateCcw, Star } from "lucide-react";
 import type { Note } from "@/lib/types";
 import { cn, readingTime, relativeTime, shortDate, stripMarkdown } from "@/lib/utils";
+import { tap } from "@/components/motion";
 import { useNoteActions } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 
@@ -21,10 +22,12 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
   return (
     <motion.article
       layout="position"
+      layoutId={`note-${note.id}`}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
+      whileTap={{ scale: 0.985 }}
       onClick={() => (selectMode ? toggleSelected(note.id) : select(note.id))}
       className={cn(
         "group cursor-pointer rounded-xl border bg-card p-4 transition-colors",
@@ -53,6 +56,7 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
             event.stopPropagation();
             updateNote(note.id, { pinned: !note.pinned });
           }}
+          {...tap}
           aria-label={note.pinned ? "Unpin note" : "Pin note"}
           className={cn(
             "mt-0.5 shrink-0 transition",

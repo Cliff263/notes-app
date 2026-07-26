@@ -31,6 +31,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { continuationFor } from "@/lib/markdown";
 import { ROUTES } from "@/lib/routes";
@@ -47,7 +48,13 @@ import {
 } from "@/lib/utils";
 import { useEvents, useEventActions } from "@/hooks/use-events";
 import { useNote, useNoteActions, useNoteAutosave } from "@/hooks/use-notes";
-import { MarkdownPreview } from "./markdown-preview";
+const MarkdownPreview = dynamic(
+  () => import("./markdown-preview").then((m) => m.MarkdownPreview),
+  {
+    ssr: false,
+    loading: () => <p className="text-[13px] text-muted-2">Rendering…</p>,
+  },
+);
 import { useNotesStore } from "@/store/notes-store";
 
 export function NoteEditor() {

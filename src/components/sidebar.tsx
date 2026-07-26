@@ -26,7 +26,8 @@ import { useMemo, useState, type ComponentType } from "react";
 import { ROUTES } from "@/lib/routes";
 import { CATEGORIES } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useNotes, useNoteActions } from "@/hooks/use-notes";
+import { AnimatedNumber, tap } from "@/components/motion";
+import { useNotes, useNoteActions, usePrefetchNotes } from "@/hooks/use-notes";
 import { allTags, categoryCounts, countBy, useNotesStore } from "@/store/notes-store";
 
 const CATEGORY_ICONS: Record<string, ComponentType<{ className?: string }>> = {
@@ -46,6 +47,7 @@ export function Sidebar() {
   const { createNote } = useNoteActions();
   const setDrawerOpen = useNotesStore((state) => state.setDrawerOpen);
   const { data: notes = [] } = useNotes();
+  const prefetchNotes = usePrefetchNotes();
   const tags = useMemo(() => allTags(notes), [notes]);
   const counts = useMemo(() => categoryCounts(notes), [notes]);
   const favoriteCount = useMemo(() => countBy(notes, "favorite"), [notes]);
@@ -91,7 +93,11 @@ export function Sidebar() {
       }}
       className="flex h-full w-[248px] shrink-0 flex-col border-r border-line bg-panel"
     >
-      <Link href={ROUTES.all} className="flex items-center gap-2 px-4 pt-4 pb-3">
+      <Link
+        href={ROUTES.all}
+        onMouseEnter={prefetchNotes}
+        className="flex items-center gap-2 px-4 pt-4 pb-3"
+      >
         <span className="flex size-7 items-center justify-center rounded-md border border-line bg-card">
           <FileText className="size-3.5 text-foreground" />
         </span>
@@ -99,14 +105,15 @@ export function Sidebar() {
       </Link>
 
       <div className="px-3 pb-3">
-        <button
+        <motion.button
           type="button"
           onClick={handleNewNote}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-btn px-3 py-2 text-[13px] font-medium text-btn-foreground transition hover:opacity-90 active:scale-[0.99]"
+          {...tap}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-btn px-3 py-2 text-[13px] font-medium text-btn-foreground transition hover:opacity-90"
         >
           <Plus className="size-4" />
           New Note
-        </button>
+        </motion.button>
       </div>
 
       <nav className="space-y-0.5 px-3">
@@ -291,9 +298,14 @@ function NavLink({
   active?: boolean;
   count?: number;
 }) {
+  const router = useRouter();
+
   return (
     <Link
       href={href}
+      // Warm the route on intent so the click lands on a rendered page.
+      onMouseEnter={() => router.prefetch(href)}
+      onTouchStart={() => router.prefetch(href)}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition",
         active
@@ -304,7 +316,7 @@ function NavLink({
       <Icon className="size-4 shrink-0" />
       <span className="flex-1">{label}</span>
       {typeof count === "number" && count > 0 && (
-        <span className="text-[11px] text-muted-2">{count}</span>
+        <AnimatedNumber value={count} className="text-[11px] text-muted-2" />
       )}
     </Link>
   );

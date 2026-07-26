@@ -2,11 +2,15 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { CalendarView } from "@/components/calendar/calendar-view";
-import {
-  EventModal,
-  type EventModalState,
-} from "@/components/calendar/event-modal";
+
+// The modal is only reachable behind a click, so it stays out of first paint.
+const EventModal = dynamic(
+  () => import("@/components/calendar/event-modal").then((m) => m.EventModal),
+  { ssr: false },
+);
+import type { EventModalState } from "@/components/calendar/event-modal";
 import { UpcomingPanel } from "@/components/calendar/upcoming-panel";
 import { MobileNav } from "@/components/mobile-nav";
 import { MobileTopBar } from "@/components/mobile-top-bar";

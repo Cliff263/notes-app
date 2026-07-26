@@ -23,6 +23,12 @@ export const authConfig = {
     : [],
   session: { strategy: "jwt" },
   pages: { signIn: "/login", error: "/login" },
+  /*
+   * Without this, Auth.js refuses to run behind any host it can't verify and
+   * every production sign-in fails with `error=Configuration`. Vercel sets the
+   * host itself; self-hosting (or `next start` locally) needs it stated.
+   */
+  trustHost: true,
   callbacks: {
     authorized({ auth, request }) {
       const signedIn = Boolean(auth?.user);

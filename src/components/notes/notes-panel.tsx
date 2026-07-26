@@ -21,6 +21,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { describeFilter } from "@/lib/routes";
 import { SORT_OPTIONS, type NoteFilter } from "@/lib/types";
 import { cn, wordCount } from "@/lib/utils";
+import { AnimatedNumber, TextReveal } from "@/components/motion";
 import { useNotes, useNoteActions } from "@/hooks/use-notes";
 import { filterNotes, useNotesStore } from "@/store/notes-store";
 import { NoteCard } from "./note-card";
@@ -128,10 +129,11 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
 
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-[15px] font-semibold tracking-tight">
-              {copy.title}
+              <TextReveal key={copy.title} text={copy.title} />
             </h1>
             <p className="mt-0.5 truncate text-[11px] text-muted-2">
-              {notes.length} {notes.length === 1 ? "note" : "notes"}
+              <AnimatedNumber value={notes.length} />{" "}
+              {notes.length === 1 ? "note" : "notes"}
               {totalWords > 0 && ` · ${totalWords.toLocaleString()} words`} ·{" "}
               {copy.description}
             </p>
