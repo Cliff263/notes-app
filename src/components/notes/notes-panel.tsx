@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { describeFilter } from "@/lib/routes";
 import { SORT_OPTIONS, type NoteFilter } from "@/lib/types";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { cn } from "@/lib/utils";
 import { AnimatedNumber, TextReveal } from "@/components/motion";
 import { useNoteActions, useNotesFeed, useSummary } from "@/hooks/use-notes";
@@ -41,7 +42,9 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
   const setSelectedIds = useNotesStore((state) => state.setSelectedIds);
   const { createNote, updateNote, bulk } = useNoteActions();
 
-  const feed = useNotesFeed({ filter, search, sort });
+  // The box stays instant; the query waits for a pause in the typing.
+  const debouncedSearch = useDebouncedValue(search);
+  const feed = useNotesFeed({ filter, search: debouncedSearch, sort });
   const { data: summary } = useSummary();
 
   // Filtering and ordering happen in SQL; this is just what came back.

@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { api } from "@/lib/api";
 import { noteQueryParams, queryKeys, type NoteQuery } from "@/lib/query-keys";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { Note } from "@/lib/types";
 import { useNotesStore, type BulkAction } from "@/store/notes-store";
 
@@ -168,14 +169,16 @@ export function useNoteActions() {
   const settle = () => {
     void client.invalidateQueries({ queryKey: queryKeys.notes.lists() });
     void client.invalidateQueries({ queryKey: queryKeys.notes.summary() });
+    // A title change makes every `[[link]]` resolve differently.
+    void client.invalidateQueries({ queryKey: queryKeys.notes.titles() });
   };
 
   const create = useMutation({
-    mutationFn: (input: { category?: string; tags?: string[] }) =>
+    mutationFn: (input: { category?: string; tags?: string[]; title?: string }) =>
       api<Note>("/api/notes", {
         method: "POST",
         body: JSON.stringify({
-          title: "Untitled note",
+          title: input.title ?? "Untitled note",
           content: "",
           category: input.category ?? "Personal",
           tags: input.tags ?? [],
@@ -307,8 +310,8 @@ export function useNoteActions() {
 
   return useMemo(
     () => ({
-      createNote: (category?: string, tags?: string[]) =>
-        create.mutateAsync({ category, tags }).then((note) => note?.id ?? null),
+      createNote: (category?: string, tags?: string[], title?: string) =>
+        create.mutateAsync({ category, tags, title }).then((note) => note?.id ?? null),
       updateNote: (id: string, patch: Partial<Note>) => update.mutate({ id, patch }),
       duplicateNote: (source: Note) => duplicate.mutate(source),
       deleteNote: (id: string, permanent?: boolean) => remove.mutate({ id, permanent }),
@@ -377,9 +380,12 @@ export function useDueNotes() {
   });
 }
 
-/** Free-text search used by the command palette. */
+/**
+ * Free-text search used by the command palette. Debounced, so a word typed at
+ * speed is one ranked query rather than one per letter.
+ */
 export function useNoteSearch(term: string) {
-  const search = term.trim();
+  const search = useDebouncedValue(term.trim());
   return useQuery({
     queryKey: [...queryKeys.notes.all, "search", search],
     queryFn: () =>

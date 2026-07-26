@@ -33,6 +33,9 @@ export const queryKeys = {
       ] as const,
     detail: (id: string) => [...queryKeys.notes.all, "detail", id] as const,
     summary: () => [...queryKeys.notes.all, "summary"] as const,
+    /** Id and title of every note, for resolving `[[wiki links]]`. */
+    titles: () => [...queryKeys.notes.all, "titles"] as const,
+    backlinks: (id: string) => [...queryKeys.notes.all, "backlinks", id] as const,
   },
   events: {
     all: ["events"] as const,

@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       .orderBy(desc(notes.updatedAt));
 
     const included = rows
-      .map(serializeNote)
+      .map((row) => serializeNote(row))
       .filter((note) => params.get("archived") === "true" || !note.archived);
 
     if (included.length === 0) {

@@ -64,6 +64,8 @@ export function toPlainText(notes: Note[]) {
                 return `\n${inlineToText(block.content).toUpperCase()}`;
               case "bullet":
                 return `  ${block.ordered ? block.marker : "-"} ${inlineToText(block.content)}`;
+              case "task":
+                return `  ${block.checked ? "[x]" : "[ ]"} ${inlineToText(block.content)}`;
               case "quote":
                 return `  | ${inlineToText(block.content)}`;
               case "code":
@@ -124,6 +126,16 @@ function blockToParagraph(block: Block) {
         spacing: { after: 60 },
       });
     }
+    case "task":
+      // Word is UTF-8, so the checklist keeps its boxes.
+      return new Paragraph({
+        children: [
+          new TextRun({ text: `${block.checked ? "☑" : "☐"}  `, size: 22 }),
+          ...inlineRuns(block.content),
+        ],
+        indent: { left: 360 },
+        spacing: { after: 60 },
+      });
     case "quote":
       return new Paragraph({
         children: inlineRuns(block.content),
@@ -259,6 +271,14 @@ export async function toPdf(notes: Note[]) {
           break;
         case "bullet":
           draw(`${block.ordered ? block.marker : "•"}  ${inlineToText(block.content)}`, {
+            size: 11,
+            gap: 4,
+          });
+          break;
+        case "task":
+          // Helvetica is WinAnsi-encoded and cannot draw ☐/☑ at all, so the
+          // PDF keeps the markdown's own brackets.
+          draw(`${block.checked ? "[x]" : "[ ]"}  ${inlineToText(block.content)}`, {
             size: 11,
             gap: 4,
           });

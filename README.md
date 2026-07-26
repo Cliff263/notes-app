@@ -14,7 +14,9 @@ sign-in.
 
 - Create, edit, duplicate, archive and delete notes; edits save automatically
 - Pin, favorite and tag, each with its own page
-- Search across title, content and tags in one pass
+- Ranked full-text search across titles, bodies and tags
+- Checklists you can tick from the preview, with progress on the card
+- `[[Link]]` one note to another, and see what links back
 - Grid or list layout, dark or light theme
 
 Every destination in the sidebar is a real route, so views are linkable and
@@ -42,6 +44,34 @@ in Work, from `/tags/react` it arrives already tagged `#react`.
   continue when you press Enter
 - Headings, lists, quotes, code and emphasis render in the preview and carry
   through to PDF and Word exports
+- `- [ ]` makes a checklist. The preview turns each item into a checkbox, and
+  ticking one rewrites that line of the note — there is no second copy of the
+  state to fall out of step. The card shows `3/7` and a progress bar, and the
+  boxes survive into every export.
+- `[[Another note]]` links to a note by title, `[[Another note|as this]]` if you
+  want different link text. Type `[[` and a completion menu offers your notes;
+  a link to a title that does not exist yet renders as an offer to create it.
+  The note being pointed at lists its incoming links under "Linked from".
+
+**Search**
+
+Typing in the search box runs a ranked Postgres full-text query, not a substring
+scan:
+
+- Titles outrank bodies, which outrank tags, so the note you meant is usually
+  first. Sorting by anything other than "Last edited" overrides the ranking.
+- The last word is matched as a prefix, so results appear while you are still
+  typing it.
+- Each result shows the passage that matched, with the matched words
+  highlighted, instead of the note's opening line.
+
+`npm run db:extras` builds the GIN index that makes this fast. It is worth
+running, but it is not required for correctness — the same query returns the
+same rows without it, it just scans to find them.
+
+One consequence of real search: words are matched whole (plus that trailing
+prefix), so "nage" no longer finds "management". Searching for punctuation on
+its own still falls back to a substring match.
 
 **Getting around**
 
@@ -132,6 +162,13 @@ Run this again after pulling changes that add columns — `notes.deletedAt`,
 `notes.dueAt` and `events.noteId` were added for trash, due dates and
 note-to-event links. All three are nullable, so the migration is additive.
 
+`db:push` finishes by running `db:extras`, which adds what a Drizzle schema
+cannot describe — today that is the GIN index behind full-text search, built
+over an expression rather than a column. Because that index is not in the
+schema, `drizzle-kit` will offer to drop it as something it does not recognise;
+answer either way, `db:extras` puts it back. You can also run
+`npm run db:extras` on its own at any time.
+
 ### 4. Run it
 
 ```bash
@@ -149,6 +186,7 @@ Open http://localhost:3000, create an account, and your workspace is populated.
 | `npm start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm run db:push` | Push the Drizzle schema to the database |
+| `npm run db:extras` | Create the indexes the schema cannot express (full-text search) |
 | `npm run db:generate` | Generate SQL migration files |
 | `npm run db:studio` | Drizzle Studio |
 | `npm test` | Unit tests (Vitest) |
@@ -222,3 +260,9 @@ The note list is paginated with a cursor and filtered, searched and ordered in
 SQL, so a filtered view shows every match rather than only the ones that happened
 to load. Counts and the tag cloud come from a separate aggregate endpoint, which
 keeps them correct however little of the list is on screen.
+
+Search is ranked in the database too. The weighted `tsvector` lives in one place
+(`src/lib/search.ts`) and both the query and the index in `scripts/db-extras.ts`
+are built from it, because Postgres only uses an expression index when the query
+repeats the expression exactly. What reaches `to_tsquery` is reduced to letters
+and digits first, so a search box can never produce a query that fails to parse.

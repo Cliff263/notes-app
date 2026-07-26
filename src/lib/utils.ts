@@ -14,12 +14,15 @@ export function stripMarkdown(text: string) {
   return text
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/^#{1,6}\s+/gm, "")
+    // Checklist markers go with the bullet, so an excerpt reads "Buy milk".
+    .replace(/^\s*[-*+]\s+\[[ xX]\]\s?/gm, "")
     .replace(/^\s*[-*+]\s+/gm, "")
     .replace(/^\s*\d+\.\s+/gm, "")
     .replace(/^\s*>\s?/gm, "")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
     .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[\[([^\]]+)\]\]/g, (_match, inner: string) => inner.split("|").pop()!.trim())
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/\s+/g, " ")
     .trim();

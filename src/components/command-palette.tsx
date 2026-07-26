@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, type ComponentType } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { ROUTES } from "@/lib/routes";
+import { stripHighlights } from "@/lib/search";
 import { cn, stripMarkdown } from "@/lib/utils";
 import { useNoteActions, useNote, useNoteSearch } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
@@ -130,7 +131,11 @@ export function CommandPalette({
       ? matches.map((note) => ({
             id: `note-${note.id}`,
             label: note.title || "Untitled note",
-            hint: stripMarkdown(note.content).slice(0, 48),
+            // The server's matched passage says more than the note's opening.
+            hint: (note.searchSnippet
+              ? stripHighlights(stripMarkdown(note.searchSnippet))
+              : stripMarkdown(note.content)
+            ).slice(0, 48),
             group: "Notes" as const,
             icon: FileText,
             run: () => {

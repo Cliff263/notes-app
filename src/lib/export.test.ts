@@ -51,6 +51,23 @@ describe("toPlainText", () => {
   });
 });
 
+const checklist: Note = {
+  ...note,
+  id: "n3",
+  title: "Launch",
+  content: "- [x] book the room\n- [ ] send the invite\n\nSee [[Meeting Notes|the agenda]].",
+};
+
+describe("toPlainText with a checklist", () => {
+  it("keeps the boxes and shows the link's label", () => {
+    const out = toPlainText([checklist]);
+    expect(out).toContain("[x] book the room");
+    expect(out).toContain("[ ] send the invite");
+    expect(out).toContain("See the agenda.");
+    expect(out).not.toContain("[[");
+  });
+});
+
 describe("binary exports", () => {
   it("writes a real PDF", async () => {
     const pdf = await toPdf([note]);
@@ -62,5 +79,19 @@ describe("binary exports", () => {
     const docx = await toDocx([note], "Export");
     expect(docx.subarray(0, 2).toString()).toBe("PK");
     expect(docx.length).toBeGreaterThan(500);
+  });
+
+  /*
+   * Helvetica is WinAnsi-encoded, so a checkbox glyph would throw rather than
+   * render. This is the guard against that coming back.
+   */
+  it("draws a checklist without tripping over the PDF font's encoding", async () => {
+    const pdf = await toPdf([checklist]);
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+  });
+
+  it("puts a checklist into Word", async () => {
+    const docx = await toDocx([checklist], "Export");
+    expect(docx.subarray(0, 2).toString()).toBe("PK");
   });
 });

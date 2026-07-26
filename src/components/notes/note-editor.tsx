@@ -6,12 +6,14 @@ import {
   Archive,
   ArchiveRestore,
   Bold,
+  Braces,
   CalendarClock,
   CalendarPlus,
   ChevronLeft,
   ChevronRight,
   Code,
   Copy,
+  CornerUpLeft,
   Download,
   Eye,
   FileText,
@@ -22,6 +24,7 @@ import {
   Italic,
   Link as LinkIcon,
   List as ListIcon,
+  ListChecks,
   ListOrdered,
   MoreHorizontal,
   PenLine,
@@ -33,7 +36,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import { continuationFor } from "@/lib/markdown";
+import { continuationFor, toggleTask, wikiLinkQueryAt } from "@/lib/markdown";
 import { ROUTES } from "@/lib/routes";
 import { CATEGORIES, type ExportFormat, type Note } from "@/lib/types";
 import { useBreakpoint } from "@/lib/use-media-query";
@@ -46,7 +49,9 @@ import {
   stripMarkdown,
   wordCount,
 } from "@/lib/utils";
+import { Stagger, StaggerItem } from "@/components/motion";
 import { useEvents, useEventActions } from "@/hooks/use-events";
+import { useBacklinks, useNoteTitles } from "@/hooks/use-note-links";
 import { useNote, useNoteActions, useNoteAutosave } from "@/hooks/use-notes";
 const MarkdownPreview = dynamic(
   () => import("./markdown-preview").then((m) => m.MarkdownPreview),
@@ -114,15 +119,51 @@ export function NoteEditor() {
 }
 
 function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
-  const { deleteNote, duplicateNote } = useNoteActions();
+  const { createNote, deleteNote, duplicateNote } = useNoteActions();
   const updateNote = useNoteAutosave();
   const select = useNotesStore((state) => state.select);
+
+  /*
+   * The body is held here rather than read back from the cache on every
+   * keystroke. `note` arrives as a prop, so any local state change re-renders
+   * this component with whatever the parent last passed down — which, mid-word,
+   * is the text as it was before the last character. Owning the draft keeps the
+   * textarea in step with the keyboard; the cache is still written on every
+   * change, so the card list and the word count follow along.
+   *
+   * The component is keyed by note id, so switching notes starts a fresh draft.
+   */
+  const [content, setContent] = useState(note.content);
+
+  function writeContent(next: string) {
+    setContent(next);
+    updateNote(note.id, { content: next });
+  }
 
   const [tagDraft, setTagDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [mode, setMode] = useState<"write" | "preview">("write");
   const [scheduling, setScheduling] = useState(false);
+
+  // `[[` link completion: what is being typed, and which suggestion is active.
+  const [linkMenu, setLinkMenu] = useState<{ query: string; start: number } | null>(null);
+  const [linkCursor, setLinkCursor] = useState(0);
+
+  const { titles, byTitle } = useNoteTitles();
+  const { data: backlinks = [] } = useBacklinks(note.id, Boolean(note.title.trim()));
+
+  const suggestions = (() => {
+    if (!linkMenu) return [];
+    const needle = linkMenu.query.trim().toLowerCase();
+    return titles
+      .filter(
+        (candidate) =>
+          candidate.id !== note.id &&
+          (!needle || candidate.title.toLowerCase().includes(needle)),
+      )
+      .slice(0, 6);
+  })();
 
   const { createEvent } = useEventActions();
   // The editor needs events to show what this note is already linked to;
@@ -143,7 +184,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const selected = value.slice(start, end);
     const next = `${value.slice(0, start)}${before}${selected}${after}${value.slice(end)}`;
 
-    updateNote(note.id, { content: next });
+    writeContent(next);
     requestAnimationFrame(() => {
       field.focus();
       field.setSelectionRange(start + before.length, start + before.length + selected.length);
@@ -166,14 +207,68 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       .map((line) => (already ? line.slice(prefix.length) : `${prefix}${line}`))
       .join("\n");
 
-    updateNote(note.id, {
-      content: `${value.slice(0, lineStart)}${updated}${value.slice(lineEnd)}`,
-    });
+    writeContent(`${value.slice(0, lineStart)}${updated}${value.slice(lineEnd)}`);
     requestAnimationFrame(() => field.focus());
+  }
+
+  /** Opens or closes the link menu based on where the caret is now. */
+  function syncLinkMenu(field: HTMLTextAreaElement) {
+    const found = wikiLinkQueryAt(field.value, field.selectionStart);
+
+    // Only a real change is worth a render — this runs on every keystroke.
+    setLinkMenu((current) => {
+      if (!found && !current) return current;
+      if (found && current && found.query === current.query && found.start === current.start) {
+        return current;
+      }
+      return found;
+    });
+    setLinkCursor(0);
+  }
+
+  /** Replaces the half-typed `[[…` with a finished link to `title`. */
+  function completeLink(title: string) {
+    const field = textareaRef.current;
+    if (!field || !linkMenu) return;
+
+    const { value, selectionStart: caret } = field;
+    const next = `${value.slice(0, linkMenu.start)}[[${title}]]${value.slice(caret)}`;
+    const caretAfter = linkMenu.start + title.length + 4;
+
+    writeContent(next);
+    setLinkMenu(null);
+    requestAnimationFrame(() => {
+      field.focus();
+      field.setSelectionRange(caretAfter, caretAfter);
+    });
   }
 
   /** Enter inside a list continues it; Enter on an empty item ends it. */
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // The link menu takes the arrow keys and Enter while it is open.
+    if (linkMenu && suggestions.length) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setLinkCursor((value) => Math.min(value + 1, suggestions.length - 1));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setLinkCursor((value) => Math.max(value - 1, 0));
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        completeLink(suggestions[Math.min(linkCursor, suggestions.length - 1)].title);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setLinkMenu(null);
+        return;
+      }
+    }
+
     if (event.key !== "Enter" || event.shiftKey) return;
 
     const field = event.currentTarget;
@@ -192,7 +287,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const caretAfter =
       continuation === "" ? lineStart + 1 : caret + 1 + continuation.length;
 
-    updateNote(note.id, { content: next });
+    writeContent(next);
     requestAnimationFrame(() => {
       field.focus();
       field.setSelectionRange(caretAfter, caretAfter);
@@ -229,7 +324,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
 
     const ok = await createEvent({
       title: note.title || "Untitled note",
-      description: stripMarkdown(note.content).slice(0, 240),
+      description: stripMarkdown(content).slice(0, 240),
       location: "",
       startsAt: start.toISOString(),
       endsAt: new Date(start.getTime() + 60 * 60_000).toISOString(),
@@ -518,10 +613,30 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
         </div>
       )}
 
+      {/* What points here. Links are written by title, so this is the only way
+          to see the other half of the relationship. */}
+      {backlinks.length > 0 && (
+        <Stagger className="flex flex-wrap items-center gap-1.5 px-4 pt-2">
+          <span className="text-[11px] text-muted-2">Linked from</span>
+          {backlinks.map((backlink) => (
+            <StaggerItem key={backlink.id}>
+              <button
+                type="button"
+                onClick={() => select(backlink.id)}
+                className="flex max-w-[220px] items-center gap-1.5 rounded-md border border-line bg-card px-2 py-1 text-[11px] text-muted transition hover:text-foreground"
+              >
+                <CornerUpLeft className="size-3 shrink-0 text-muted-2" />
+                <span className="truncate">{backlink.title || "Untitled note"}</span>
+              </button>
+            </StaggerItem>
+          ))}
+        </Stagger>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3">
         <p className="text-[11px] text-muted-2">
-          Updated {longDateTime(note.updatedAt)} · {wordCount(note.content)} words ·{" "}
-          {readingTime(note.content)} min read
+          Updated {longDateTime(note.updatedAt)} · {wordCount(content)} words ·{" "}
+          {readingTime(content)} min read
         </p>
 
         <div className="flex items-center gap-1 rounded-lg border border-line p-0.5">
@@ -571,26 +686,102 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
           <FormatButton label="Code" onClick={() => wrapSelection("`", "`")}>
             <Code className="size-3.5" />
           </FormatButton>
+          <FormatButton label="Checklist" onClick={() => prefixLine("- [ ] ")}>
+            <ListChecks className="size-3.5" />
+          </FormatButton>
           <FormatButton label="Link" onClick={() => wrapSelection("[", "](url)")}>
             <LinkIcon className="size-3.5" />
+          </FormatButton>
+          <FormatButton
+            label="Link to note"
+            onClick={() => {
+              wrapSelection("[[", "]]");
+              // Opening the brackets is also how the completion menu is asked for.
+              requestAnimationFrame(() => {
+                const field = textareaRef.current;
+                if (field) syncLinkMenu(field);
+              });
+            }}
+          >
+            <Braces className="size-3.5" />
           </FormatButton>
         </div>
       )}
 
-      <div className="min-h-0 flex-1 border-t border-line">
+      <div className="relative min-h-0 flex-1 border-t border-line">
         {mode === "write" ? (
-          <textarea
-            ref={textareaRef}
-            value={note.content}
-            onChange={(event) => updateNote(note.id, { content: event.target.value })}
-            onKeyDown={handleKeyDown}
-            placeholder="Start writing... markdown works here"
-            spellCheck={false}
-            className="field h-full w-full resize-none bg-transparent px-4 py-4 leading-[1.75] text-foreground scroll-thin"
-          />
+          <>
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(event) => {
+                writeContent(event.target.value);
+                syncLinkMenu(event.currentTarget);
+              }}
+              onKeyUp={(event) => syncLinkMenu(event.currentTarget)}
+              onClick={(event) => syncLinkMenu(event.currentTarget)}
+              onBlur={() => setLinkMenu(null)}
+              onKeyDown={handleKeyDown}
+              placeholder="Start writing... markdown works here"
+              spellCheck={false}
+              className="field h-full w-full resize-none bg-transparent px-4 py-4 leading-[1.75] text-foreground scroll-thin"
+            />
+
+            {/*
+              Anchored to the pane rather than the caret: no measuring, and it
+              lands somewhere sensible on the phone sheet too.
+            */}
+            <AnimatePresence>
+              {linkMenu && suggestions.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.14, ease: "easeOut" }}
+                  className="absolute inset-x-3 bottom-3 z-20 overflow-hidden rounded-xl border border-line bg-card shadow-2xl"
+                >
+                  <p className="border-b border-line px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] text-muted-2">
+                    Link to note
+                  </p>
+                  {suggestions.map((candidate, index) => (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      // The textarea blurs before a click lands, so complete on
+                      // pointer-down while the menu still knows where it is.
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        completeLink(candidate.title);
+                      }}
+                      onMouseEnter={() => setLinkCursor(index)}
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition",
+                        index === Math.min(linkCursor, suggestions.length - 1)
+                          ? "bg-card-hover text-foreground"
+                          : "text-muted hover:bg-card-hover",
+                      )}
+                    >
+                      <LinkIcon className="size-3 shrink-0 text-muted-2" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {candidate.title || "Untitled note"}
+                      </span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>
         ) : (
           <div className="h-full overflow-y-auto px-4 py-4 scroll-thin">
-            <MarkdownPreview source={note.content} />
+            <MarkdownPreview
+              source={content}
+              onToggleTask={(line) =>
+                writeContent(toggleTask(content, line))
+              }
+              resolveLink={(title) => byTitle.get(title.trim().toLowerCase())}
+              onOpenNote={select}
+              onCreateNote={(title) => void createNote(note.category, [], title)}
+            />
           </div>
         )}
       </div>

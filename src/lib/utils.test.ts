@@ -43,6 +43,16 @@ describe("stripMarkdown", () => {
   it("drops fenced code entirely", () => {
     expect(stripMarkdown("before\n```\nconst x = 1\n```\nafter")).toBe("before after");
   });
+
+  it("removes checkboxes, so an excerpt is the task and not its marker", () => {
+    expect(stripMarkdown("- [ ] buy milk\n- [x] call back")).toBe("buy milk call back");
+  });
+
+  it("shows a wiki link the way it reads", () => {
+    expect(stripMarkdown("see [[Project plan]] and [[Notes|these ones]]")).toBe(
+      "see Project plan and these ones",
+    );
+  });
 });
 
 describe("monthGrid", () => {

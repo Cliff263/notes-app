@@ -23,6 +23,12 @@ export type Note = {
   deletedAt: string | null;
   /** Optional due date; surfaces in the calendar. */
   dueAt: string | null;
+  /**
+   * The matching passage, with the matched words wrapped in markers. Only ever
+   * set on a search response — it describes this result, not the note, so it is
+   * never stored and disappears the next time the note is fetched.
+   */
+  searchSnippet?: string;
 };
 
 export const EVENT_COLORS = [

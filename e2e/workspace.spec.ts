@@ -65,9 +65,13 @@ test.describe("editing", () => {
   test("a title edit survives a reload", async ({ page }) => {
     await openNote(page, "Weekend Trip Ideas");
 
-    const title = page.locator('input[placeholder="Untitled note"]');
-    await title.fill("Weekend Trip Ideas edited");
-    await page.waitForTimeout(1500);
+    // Waiting for the save itself rather than a guess at how long it takes.
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" && response.url().includes("/api/notes/"),
+    );
+    await page.locator('input[placeholder="Untitled note"]').fill("Weekend Trip Ideas edited");
+    await saved;
 
     await page.reload();
     await expect(page.getByText("Weekend Trip Ideas edited").first()).toBeVisible({
@@ -146,6 +150,88 @@ test.describe("markdown", () => {
     await page.getByRole("button", { name: "preview" }).click();
     await expect(page.getByText("Heading", { exact: true })).toBeVisible();
     await expect(page.locator("strong", { hasText: "bold" })).toBeVisible();
+  });
+});
+
+test.describe("full-text search", () => {
+  test("ranks the best match first and highlights the passage", async ({ page }) => {
+    // "unticked" appears once, deep in the body of one note, so finding it at
+    // all proves the search runs in the database rather than over the page.
+    await page.getByPlaceholder("Search notes...").fill("unticked");
+    await expect(cards(page)).toHaveCount(1);
+
+    const first = cards(page).first();
+    await expect(first.locator("h3")).toHaveText("Launch Checklist");
+    await expect(first.locator("mark")).toContainText("unticked");
+  });
+
+  test("matches a word that is still being typed", async ({ page }) => {
+    await page.getByPlaceholder("Search notes...").fill("retrospect");
+    await expect(cards(page).first().locator("h3")).toContainText("Retrospective");
+  });
+
+  test("ranks a title match above a note that only carries the tag", async ({ page }) => {
+    // Both notes are tagged #habits; only one has it in the title, and the
+    // title carries more weight in the ranking.
+    await page.getByPlaceholder("Search notes...").fill("habits");
+    await expect(cards(page).first()).toBeVisible();
+
+    expect(await cards(page).count()).toBeGreaterThan(1);
+    await expect(cards(page).first().locator("h3")).toContainText("Atomic Habits");
+  });
+});
+
+test.describe("checklists", () => {
+  test("a card shows how much of its checklist is done", async ({ page }) => {
+    const card = cards(page).filter({ hasText: "Launch Checklist" }).first();
+    await expect(card.getByTitle(/of 7 done/)).toBeVisible();
+  });
+
+  test("ticking a box in the preview edits the note and survives a reload", async ({
+    page,
+  }) => {
+    await openNote(page, "Launch Checklist");
+    await page.getByRole("button", { name: "preview" }).click();
+
+    const boxes = page.getByRole("checkbox");
+    await expect(boxes.first()).toBeVisible();
+    await boxes.nth(2).click();
+    await page.waitForTimeout(1500);
+
+    await page.reload();
+    await expect(
+      cards(page).filter({ hasText: "Launch Checklist" }).first().getByTitle("3 of 7 done"),
+    ).toBeVisible({ timeout: 20_000 });
+  });
+});
+
+test.describe("links between notes", () => {
+  test("a [[link]] opens its target, which lists what points at it", async ({ page }) => {
+    await openNote(page, "Launch Checklist");
+    await page.getByRole("button", { name: "preview" }).click();
+
+    await page.getByRole("button", { name: "Meeting Notes - Product Launch" }).click();
+
+    await expect(page.locator('input[placeholder="Untitled note"]')).toHaveValue(
+      "Meeting Notes - Product Launch",
+    );
+    await expect(page.getByText("Linked from")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Launch Checklist" }).first(),
+    ).toBeVisible();
+  });
+
+  test("typing [[ suggests notes to link to", async ({ page }) => {
+    await openNote(page, "Weekend Trip Ideas");
+
+    const editor = page.locator('textarea[placeholder^="Start writing"]');
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await editor.pressSequentially("\n\n[[pasta");
+
+    await expect(page.getByText("Link to note")).toBeVisible();
+    await page.getByRole("button", { name: /Pasta Recipe/ }).click();
+    await expect(editor).toHaveValue(/\[\[Pasta Recipe Collection\]\]/);
   });
 });
 

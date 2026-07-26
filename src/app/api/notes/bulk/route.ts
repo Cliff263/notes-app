@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     }
 
     const updated = await db.update(notes).set(patch).where(scope).returning();
-    return Response.json(updated.map(serializeNote));
+    return Response.json(updated.map((row) => serializeNote(row)));
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorized();
     throw error;

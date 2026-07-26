@@ -1,8 +1,9 @@
 import type { DbEvent, DbNote } from "@/db/schema";
 import type { CalendarEvent, EventColor, Note } from "./types";
 
-export function serializeNote(row: DbNote): Note {
+export function serializeNote(row: DbNote, snippet?: string | null): Note {
   return {
+    ...(snippet ? { searchSnippet: snippet } : null),
     id: row.id,
     title: row.title,
     content: row.content,

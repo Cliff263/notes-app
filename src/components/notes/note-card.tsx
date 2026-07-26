@@ -1,7 +1,9 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { CalendarClock, Check, Pin, RotateCcw, Star } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
+import { CalendarClock, Check, ListChecks, Pin, RotateCcw, Star } from "lucide-react";
+import { taskProgress } from "@/lib/markdown";
+import { highlightSegments, stripHighlights } from "@/lib/search";
 import type { Note } from "@/lib/types";
 import { cn, readingTime, relativeTime, shortDate, stripMarkdown } from "@/lib/utils";
 import { tap } from "@/components/motion";
@@ -14,10 +16,27 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
   const selectMode = useNotesStore((state) => state.selectMode);
   const toggleSelected = useNotesStore((state) => state.toggleSelected);
   const checked = useNotesStore((state) => state.selectedIds.has(note.id));
+  const reduced = useReducedMotion();
 
   const excerpt = stripMarkdown(note.content);
   const minutes = readingTime(note.content);
   const trashed = Boolean(note.deletedAt);
+  const tasks = taskProgress(note.content);
+  /*
+   * On a search result the server sends back the passage that matched, which is
+   * far more useful than the note's opening line. It comes back as raw markdown
+   * with the matched words marked, so it goes through the same tidy-up as the
+   * excerpt — the markers are control characters and survive it untouched.
+   */
+  const snippet = note.searchSnippet
+    ? highlightSegments(stripMarkdown(note.searchSnippet))
+    : null;
+
+  // A passage lifted from the middle of a note reads better with a lead-in.
+  const snippetLead =
+    snippet && !excerpt.startsWith(stripHighlights(snippet[0].text).slice(0, 12))
+      ? "… "
+      : "";
 
   return (
     <motion.article
@@ -99,12 +118,51 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
             {shortDate(note.dueAt)}
           </span>
         )}
+
+        {tasks && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10px] text-muted"
+            title={`${tasks.done} of ${tasks.total} done`}
+          >
+            <ListChecks className="size-2.5" />
+            {tasks.done}/{tasks.total}
+            <span className="h-1 w-8 overflow-hidden rounded-full bg-line">
+              <motion.span
+                initial={false}
+                animate={{ width: `${(tasks.done / tasks.total) * 100}%` }}
+                transition={reduced ? { duration: 0 } : { duration: 0.35, ease: "easeOut" }}
+                className={cn(
+                  "block h-full rounded-full",
+                  tasks.done === tasks.total ? "bg-glow-1" : "bg-muted-2",
+                )}
+              />
+            </span>
+          </span>
+        )}
       </div>
 
-      {excerpt && (
+      {snippet ? (
         <p className="clamp-2 mt-2.5 pl-[22px] text-[12px] leading-[1.6] text-muted">
-          {excerpt}
+          {snippetLead}
+          {snippet.map((segment, index) =>
+            segment.match ? (
+              <mark
+                key={index}
+                className="rounded bg-[color-mix(in_srgb,var(--glow-1)_28%,transparent)] px-0.5 text-foreground"
+              >
+                {segment.text}
+              </mark>
+            ) : (
+              <span key={index}>{segment.text}</span>
+            ),
+          )}
         </p>
+      ) : (
+        excerpt && (
+          <p className="clamp-2 mt-2.5 pl-[22px] text-[12px] leading-[1.6] text-muted">
+            {excerpt}
+          </p>
+        )
       )}
 
       <div className="mt-3 flex items-center gap-2 pl-[22px]">

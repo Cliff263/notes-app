@@ -84,6 +84,26 @@ export const SEED_NOTES: SeedNote[] = [
 Next steps: Create a basic prototype and test with a small group of users to validate the core assumption that speed beats features.`,
   },
   {
+    title: "Launch Checklist",
+    category: "Work",
+    tags: ["launch", "checklist"],
+    daysAgo: 1,
+    content: `Everything that has to be true before we ship. Decisions and context live in [[Meeting Notes - Product Launch]] — this is only the running list.
+
+## Before the freeze
+- [x] Confirm the launch date with support
+- [x] Freeze the pricing page
+- [ ] Run the load test against staging
+- [ ] Sign off the onboarding copy
+
+## Launch day
+- [ ] Publish the announcement post
+- [ ] Watch error rates for the first two hours
+- [ ] Open the status page thread
+
+Anything unticked by Thursday gets escalated rather than carried.`,
+  },
+  {
     title: "Q1 Marketing Strategy",
     category: "Work",
     tags: ["marketing", "strategy", "q1"],
