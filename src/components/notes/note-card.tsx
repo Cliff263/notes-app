@@ -50,7 +50,7 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
             {checked && <Check className="size-3" />}
           </span>
         ) : (
-        <button
+        <motion.button
           type="button"
           onClick={(event) => {
             event.stopPropagation();
@@ -66,7 +66,7 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
           )}
         >
           <Pin className={cn("size-3.5", note.pinned && "fill-current")} />
-        </button>
+        </motion.button>
         )}
 
         <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-tight">

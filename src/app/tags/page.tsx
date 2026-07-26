@@ -11,32 +11,20 @@ import { SidebarDrawer } from "@/components/sidebar-drawer";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AnimatedNumber, Stagger, StaggerItem, TextReveal } from "@/components/motion";
 import { ROUTES } from "@/lib/routes";
-import { useNotes } from "@/hooks/use-notes";
+import { useSummary } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 
 export default function TagsPage() {
   const sidebarOpen = useNotesStore((state) => state.sidebarOpen);
-  const { data: notes = [] } = useNotes();
+  const { data: summary } = useSummary();
   const [query, setQuery] = useState("");
 
-  /** Every tag with its count and a couple of example notes. */
+  // The counts and example titles are aggregated in SQL, so they stay right
+  // however much of the note list happens to be loaded.
   const tags = useMemo(() => {
-    const map = new Map<string, { count: number; titles: string[] }>();
-    for (const note of notes) {
-      if (note.archived) continue;
-      for (const tag of note.tags) {
-        const entry = map.get(tag) ?? { count: 0, titles: [] };
-        entry.count += 1;
-        if (entry.titles.length < 3) entry.titles.push(note.title);
-        map.set(tag, entry);
-      }
-    }
-
-    return [...map.entries()]
-      .map(([tag, entry]) => ({ tag, ...entry }))
-      .filter((entry) => entry.tag.includes(query.trim().toLowerCase().replace(/^#/, "")))
-      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-  }, [notes, query]);
+    const needle = query.trim().toLowerCase().replace(/^#/, "");
+    return (summary?.tags ?? []).filter((entry) => entry.tag.includes(needle));
+  }, [summary, query]);
 
   const totalTagged = tags.reduce((sum, entry) => sum + entry.count, 0);
 

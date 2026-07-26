@@ -5,7 +5,7 @@ export const googleEnabled = Boolean(
   process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
 );
 
-const PUBLIC_ROUTES = ["/login", "/signup"];
+const PUBLIC_ROUTES = ["/login", "/signup", "/forgot", "/reset", "/verify"];
 
 /**
  * Edge-safe half of the Auth.js setup: no database adapter and no bcrypt, so it
@@ -36,7 +36,10 @@ export const authConfig = {
       const isPublic = PUBLIC_ROUTES.some((route) => pathname.startsWith(route));
 
       if (isPublic) {
-        if (signedIn) return Response.redirect(new URL("/", request.nextUrl));
+        // A signed-in visitor following a reset or confirmation link should
+        // still land on that page rather than being bounced to the workspace.
+        const isEntry = pathname === "/login" || pathname === "/signup";
+        if (signedIn && isEntry) return Response.redirect(new URL("/", request.nextUrl));
         return true;
       }
 

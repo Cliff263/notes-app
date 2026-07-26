@@ -3,11 +3,18 @@ import { eq } from "drizzle-orm";
 import { assertDbConfigured, db } from "@/db/client";
 import { users } from "@/db/schema";
 import { seedWorkspace } from "@/db/seed-user";
+import { appUrl, issueToken } from "@/lib/auth-tokens";
+import { sendEmail, verifyEmailEmail } from "@/lib/email";
+import { clientIp, LIMITS, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
   assertDbConfigured();
+
+  // Account creation is the cheapest endpoint to abuse, so it is capped first.
+  const limit = rateLimit(`signup:${clientIp(request)}`, LIMITS.signup);
+  if (!limit.ok) return tooManyRequests(limit);
 
   let body: { name?: string; email?: string; password?: string };
   try {
@@ -56,6 +63,16 @@ export async function POST(request: Request) {
     .returning({ id: users.id });
 
   await seedWorkspace(created.id);
+
+  // Confirming the address is what makes a future password reset trustworthy.
+  const token = await issueToken(created.id, "verify");
+  await sendEmail({
+    to: email,
+    ...verifyEmailEmail(`${appUrl()}/verify/${token}`),
+  }).catch((error) => {
+    // A mail failure must not cost someone their new account.
+    console.error("[signup] could not send the confirmation email", error);
+  });
 
   return Response.json({ ok: true }, { status: 201 });
 }

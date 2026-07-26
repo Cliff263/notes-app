@@ -20,14 +20,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { describeFilter } from "@/lib/routes";
 import { SORT_OPTIONS, type NoteFilter } from "@/lib/types";
-import { cn, wordCount } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { AnimatedNumber, TextReveal } from "@/components/motion";
-import { useNotes, useNoteActions } from "@/hooks/use-notes";
-import { filterNotes, useNotesStore } from "@/store/notes-store";
+import { useNoteActions, useNotesFeed, useSummary } from "@/hooks/use-notes";
+import { useNotesStore } from "@/store/notes-store";
 import { NoteCard } from "./note-card";
 
 export function NotesPanel({ filter }: { filter: NoteFilter }) {
-  const { data: allNotes = [], isPending } = useNotes();
   const search = useNotesStore((state) => state.search);
   const setSearch = useNotesStore((state) => state.setSearch);
   const view = useNotesStore((state) => state.view);
@@ -42,17 +41,62 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
   const setSelectedIds = useNotesStore((state) => state.setSelectedIds);
   const { createNote, updateNote, bulk } = useNoteActions();
 
+  const feed = useNotesFeed({ filter, search, sort });
+  const { data: summary } = useSummary();
+
+  // Filtering and ordering happen in SQL; this is just what came back.
   const notes = useMemo(
-    () => filterNotes(allNotes, filter, search, sort),
-    [allNotes, filter, search, sort],
+    () => feed.data?.pages.flatMap((page) => page.notes) ?? [],
+    [feed.data],
   );
   const copy = describeFilter(filter);
+  const isPending = feed.isPending;
 
   const archivedIds = notes.map((note) => note.id);
-  const totalWords = useMemo(
-    () => notes.reduce((sum, note) => sum + wordCount(note.content), 0),
-    [notes],
-  );
+
+  /*
+   * The header counts the whole view, not the loaded slice — otherwise the
+   * number would climb as you scroll.
+   */
+  const shown = notes.length;
+  const total =
+    filter.kind === "all"
+      ? (summary?.counts.total ?? shown)
+      : filter.kind === "favorites"
+        ? (summary?.counts.favorites ?? shown)
+        : filter.kind === "pinned"
+          ? (summary?.counts.pinned ?? shown)
+          : filter.kind === "archive"
+            ? (summary?.counts.archived ?? shown)
+            : filter.kind === "trash"
+              ? (summary?.counts.trashed ?? shown)
+              : filter.kind === "category"
+                ? (summary?.categories[filter.value] ?? shown)
+                : filter.kind === "tag"
+                  ? (summary?.tags.find((entry) => entry.tag === filter.value)?.count ??
+                    shown)
+                  : shown;
+
+  // A search narrows the view, so the loaded count is the honest one there.
+  const headline = search.trim() ? shown : total;
+
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !feed.hasNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !feed.isFetchingNextPage) {
+          void feed.fetchNextPage();
+        }
+      },
+      { rootMargin: "320px" },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [feed]);
 
   return (
     <section className="flex h-full min-w-0 flex-1 flex-col border-r border-line bg-surface">
@@ -132,10 +176,12 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
               <TextReveal key={copy.title} text={copy.title} />
             </h1>
             <p className="mt-0.5 truncate text-[11px] text-muted-2">
-              <AnimatedNumber value={notes.length} />{" "}
-              {notes.length === 1 ? "note" : "notes"}
-              {totalWords > 0 && ` · ${totalWords.toLocaleString()} words`} ·{" "}
-              {copy.description}
+              <AnimatedNumber value={headline} />{" "}
+              {headline === 1 ? "note" : "notes"}
+              {filter.kind === "all" && summary?.counts.words
+                ? ` · ${summary.counts.words.toLocaleString()} words`
+                : ""}{" "}
+              · {copy.description}
             </p>
           </div>
 
@@ -273,7 +319,7 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
       </AnimatePresence>
 
       <div className="pb-navbar min-h-0 flex-1 overflow-y-auto p-3 scroll-thin">
-        {isPending && allNotes.length === 0 ? (
+        {isPending && notes.length === 0 ? (
           <SkeletonList />
         ) : notes.length === 0 ? (
           <EmptyState
@@ -305,6 +351,13 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
               ))}
             </AnimatePresence>
           </motion.div>
+        )}
+
+        {/* Pulls the next page in before the list actually runs out. */}
+        <div ref={sentinel} className="h-8" aria-hidden />
+
+        {feed.isFetchingNextPage && (
+          <p className="py-2 text-center text-[11px] text-muted-2">Loading more…</p>
         )}
       </div>
     </section>

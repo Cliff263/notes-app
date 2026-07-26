@@ -6,6 +6,26 @@ import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
 
 type Params = { params: Promise<{ id: string }> };
 
+/** A single note, for when the open one isn't inside the loaded page. */
+export async function GET(_request: Request, { params }: Params) {
+  try {
+    const userId = await requireUserId();
+    const { id } = await params;
+
+    const [row] = await db
+      .select()
+      .from(notes)
+      .where(and(eq(notes.id, id), eq(notes.userId, userId)))
+      .limit(1);
+
+    if (!row) return Response.json({ error: "Note not found" }, { status: 404 });
+    return Response.json(serializeNote(row));
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return unauthorized();
+    throw error;
+  }
+}
+
 export async function PATCH(request: Request, { params }: Params) {
   try {
     const userId = await requireUserId();

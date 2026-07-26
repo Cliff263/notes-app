@@ -22,7 +22,7 @@ import { useMemo, useRef, useState, type ComponentType } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { ROUTES } from "@/lib/routes";
 import { cn, stripMarkdown } from "@/lib/utils";
-import { useNotes, useNoteActions } from "@/hooks/use-notes";
+import { useNoteActions, useNote, useNoteSearch } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 
 type Command = {
@@ -43,18 +43,21 @@ export function CommandPalette({
 }) {
   const router = useRouter();
   const { toggleTheme } = useTheme();
-  const { data: notes = [] } = useNotes();
   const { createNote, updateNote } = useNoteActions();
   const select = useNotesStore((state) => state.select);
   const selectedId = useNotesStore((state) => state.selectedId);
 
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
+
+  const selectedNote = useNote(selectedId);
+  // Search runs in the database, so the palette finds notes that were never
+  // loaded into the list.
+  const { data: matches = [] } = useNoteSearch(query);
   const listRef = useRef<HTMLDivElement>(null);
 
   const commands = useMemo<Command[]>(() => {
     const go = (path: string) => () => router.push(path);
-    const selectedNote = notes.find((note) => note.id === selectedId);
 
     const base: Command[] = [
       { id: "all", label: "All Notes", group: "Navigation", icon: NotebookText, run: go(ROUTES.all) },
@@ -113,7 +116,7 @@ export function CommandPalette({
     }
 
     return base;
-  }, [router, createNote, toggleTheme, notes, selectedId, updateNote]);
+  }, [router, createNote, toggleTheme, selectedNote, updateNote]);
 
   const results = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -124,16 +127,7 @@ export function CommandPalette({
 
     // Notes only join the list once there is something to match on.
     const matchedNotes: Command[] = needle
-      ? notes
-          .filter((note) => !note.deletedAt)
-          .filter((note) =>
-            [note.title, note.content, note.tags.join(" ")]
-              .join(" ")
-              .toLowerCase()
-              .includes(needle),
-          )
-          .slice(0, 6)
-          .map((note) => ({
+      ? matches.map((note) => ({
             id: `note-${note.id}`,
             label: note.title || "Untitled note",
             hint: stripMarkdown(note.content).slice(0, 48),
@@ -147,7 +141,7 @@ export function CommandPalette({
       : [];
 
     return [...matchedCommands, ...matchedNotes];
-  }, [commands, notes, query, router, select]);
+  }, [commands, matches, query, router, select]);
 
   // Clamp during render rather than syncing in an effect.
   const activeIndex = Math.min(cursor, Math.max(results.length - 1, 0));

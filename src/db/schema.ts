@@ -70,6 +70,31 @@ export const verificationTokens = pgTable(
   (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })],
 );
 
+/**
+ * Password resets and email confirmations. Only a hash of the token is stored,
+ * so a leaked database row cannot be replayed as a link, and `usedAt` makes
+ * every token single-use.
+ */
+export const authTokens = pgTable(
+  "authToken",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"reset" | "verify">().notNull(),
+    tokenHash: text("tokenHash").notNull(),
+    expiresAt: timestamp("expiresAt", { mode: "date", withTimezone: true }).notNull(),
+    usedAt: timestamp("usedAt", { mode: "date", withTimezone: true }),
+    createdAt: timestamp("createdAt", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("authToken_hash_idx").on(t.tokenHash)],
+);
+
 /* -------------------------------------------------------------------------- */
 /*  App tables                                                                */
 /* -------------------------------------------------------------------------- */

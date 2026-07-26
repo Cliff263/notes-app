@@ -113,6 +113,8 @@ cp .env.example .env.local
 | `AUTH_SECRET` | yes | Generate with `npx auth secret` |
 | `AUTH_GOOGLE_ID` | no | From a Google Cloud OAuth client |
 | `AUTH_GOOGLE_SECRET` | no | Same |
+| `RESEND_API_KEY` | no | Sends password-reset and confirmation email. Without it the links are logged to the server console instead, so the flow still works locally |
+| `EMAIL_FROM` | no | Defaults to Resend's onboarding sender |
 
 Leave the Google variables unset and the "Continue with Google" button simply
 doesn't render — email/password still works.
@@ -149,6 +151,8 @@ Open http://localhost:3000, create an account, and your workspace is populated.
 | `npm run db:push` | Push the Drizzle schema to the database |
 | `npm run db:generate` | Generate SQL migration files |
 | `npm run db:studio` | Drizzle Studio |
+| `npm test` | Unit tests (Vitest) |
+| `npm run test:e2e` | End-to-end tests (Playwright) |
 
 ## Running against a local Postgres
 
@@ -161,6 +165,28 @@ DATABASE_URL="postgresql://postgres@127.0.0.1:5432/notes"
 ```
 
 Then `npm run db:push` as usual.
+
+## Accounts and safety
+
+- Sign-up, sign-in, password reset and confirmation links are all rate limited.
+  Guessing one account is capped tightly; a shared address is capped loosely, so
+  an office behind one IP is not locked out by its neighbours.
+- "Forgot password" always answers the same way, so it cannot be used to find
+  out which addresses have accounts.
+- Reset and confirmation tokens are stored only as hashes, expire, and are
+  single-use.
+
+## Tests
+
+```bash
+npm test        # unit: markdown parsing, rate limiting, formatting, exports
+npm run test:e2e  # end to end, against a running app and a real database
+```
+
+The end-to-end suite rebuilds its own account and seed data before each run, so
+runs cannot contaminate each other. It signs in once and reuses the session.
+Point it at an already-running server with `E2E_BASE_URL`, and at a
+pre-installed browser with `PLAYWRIGHT_CHROMIUM_PATH`.
 
 ## How it's organised
 
@@ -191,3 +217,8 @@ src/
 Every note and event row carries a `userId`, and each API route resolves the user
 from the session before it touches the database — a request can only ever read or
 write its own rows.
+
+The note list is paginated with a cursor and filtered, searched and ordered in
+SQL, so a filtered view shows every match rather than only the ones that happened
+to load. Counts and the tag cloud come from a separate aggregate endpoint, which
+keeps them correct however little of the list is on screen.

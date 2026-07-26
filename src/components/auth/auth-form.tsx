@@ -125,6 +125,17 @@ export function AuthForm({
           required
         />
 
+        {mode === "login" && (
+          <div className="flex justify-end">
+            <Link
+              href="/forgot"
+              className="text-[12px] text-muted-2 transition hover:text-foreground"
+            >
+              Forgot your password?
+            </Link>
+          </div>
+        )}
+
         <AnimatePresence>
           {error && (
             <motion.p

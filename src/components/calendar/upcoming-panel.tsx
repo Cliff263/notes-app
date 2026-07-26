@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { CalendarClock, Clock, FileText, MapPin } from "lucide-react";
 import Link from "next/link";
 import { ROUTES } from "@/lib/routes";
-import { useNotes } from "@/hooks/use-notes";
+import { useDueNotes } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 import type { CalendarEvent } from "@/lib/types";
 import {
@@ -29,13 +29,11 @@ export function UpcomingPanel({
 }) {
   const now = useNow();
   const select = useNotesStore((state) => state.select);
-  const { data: notes = [] } = useNotes();
-
-  // Notes carrying a due date show alongside the schedule.
-  const dueNotes = notes
-    .filter((note) => note.dueAt && !note.deletedAt && !note.archived)
+  // Notes carrying a due date are fetched as their own slice, ordered by the
+  // database, so the panel does not depend on the note list being loaded.
+  const { data: due = [] } = useDueNotes();
+  const dueNotes = due
     .filter((note) => new Date(note.dueAt!).getTime() >= now - 86_400_000)
-    .sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
     .slice(0, 5);
 
   const dayEvents = events.filter((event) =>

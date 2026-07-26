@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useNoteActions, useNotes } from "@/hooks/use-notes";
+import { useNote, useNoteActions } from "@/hooks/use-notes";
 import { ROUTES } from "@/lib/routes";
 import { useNotesStore } from "@/store/notes-store";
 
@@ -37,14 +37,15 @@ function Chrome() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
 
-  const { data: notes = [] } = useNotes();
+  const selectedId = useNotesStore((state) => state.selectedId);
+  const note = useNote(selectedId);
   const actions = useNoteActions();
 
   // The listener registers once and reads the latest data through a ref.
-  const latest = useRef({ notes, actions });
+  const latest = useRef({ note, actions });
   useEffect(() => {
-    latest.current = { notes, actions };
-  }, [notes, actions]);
+    latest.current = { note, actions };
+  }, [note, actions]);
 
   useEffect(() => {
     let awaitingGo = false;
@@ -66,8 +67,7 @@ function Chrome() {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const store = useNotesStore.getState();
-      const { notes: current, actions: act } = latest.current;
-      const note = current.find((item) => item.id === store.selectedId);
+      const { note, actions: act } = latest.current;
 
       if (event.key === "Escape") {
         if (helpOpen) setHelpOpen(false);

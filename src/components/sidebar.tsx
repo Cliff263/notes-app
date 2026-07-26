@@ -22,13 +22,13 @@ import {
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState, type ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import { ROUTES } from "@/lib/routes";
 import { CATEGORIES } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatedNumber, tap } from "@/components/motion";
-import { useNotes, useNoteActions, usePrefetchNotes } from "@/hooks/use-notes";
-import { allTags, categoryCounts, countBy, useNotesStore } from "@/store/notes-store";
+import { useNoteActions, useSummary } from "@/hooks/use-notes";
+import { useNotesStore } from "@/store/notes-store";
 
 const CATEGORY_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   Personal: User,
@@ -46,14 +46,13 @@ export function Sidebar() {
 
   const { createNote } = useNoteActions();
   const setDrawerOpen = useNotesStore((state) => state.setDrawerOpen);
-  const { data: notes = [] } = useNotes();
-  const prefetchNotes = usePrefetchNotes();
-  const tags = useMemo(() => allTags(notes), [notes]);
-  const counts = useMemo(() => categoryCounts(notes), [notes]);
-  const favoriteCount = useMemo(() => countBy(notes, "favorite"), [notes]);
-  const pinnedCount = useMemo(() => countBy(notes, "pinned"), [notes]);
-  const archivedCount = useMemo(() => countBy(notes, "archived"), [notes]);
-  const trashedCount = useMemo(() => countBy(notes, "trashed"), [notes]);
+  const { data: summary } = useSummary();
+  const tags = summary?.tags.map((entry) => entry.tag) ?? [];
+  const counts = summary?.categories ?? {};
+  const favoriteCount = summary?.counts.favorites ?? 0;
+  const pinnedCount = summary?.counts.pinned ?? 0;
+  const archivedCount = summary?.counts.archived ?? 0;
+  const trashedCount = summary?.counts.trashed ?? 0;
 
   /** Navigating from the drawer should also dismiss it. */
   const closeDrawer = () => setDrawerOpen(false);
@@ -95,7 +94,6 @@ export function Sidebar() {
     >
       <Link
         href={ROUTES.all}
-        onMouseEnter={prefetchNotes}
         className="flex items-center gap-2 px-4 pt-4 pb-3"
       >
         <span className="flex size-7 items-center justify-center rounded-md border border-line bg-card">
