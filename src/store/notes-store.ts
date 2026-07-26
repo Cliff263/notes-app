@@ -1,14 +1,14 @@
 "use client";
 
 import { create } from "zustand";
-import { queueRequest } from "@/lib/outbox";
 import type { Note, NoteFilter, SortKey, ViewMode } from "@/lib/types";
 
+/**
+ * Client state only — what this tab is looking at and doing. Anything that came
+ * from the server lives in the React Query cache (`src/hooks/use-notes.ts`),
+ * so there is exactly one copy of a note in memory.
+ */
 type NotesState = {
-  notes: Note[];
-  status: "idle" | "loading" | "ready" | "error";
-  error: string | null;
-
   selectedId: string | null;
   search: string;
   sort: SortKey;
@@ -17,8 +17,10 @@ type NotesState = {
   sidebarOpen: boolean;
   /** Below lg the sidebar is an overlay drawer instead. */
   drawerOpen: boolean;
+  /** Multi-select for bulk actions. */
+  selectMode: boolean;
+  selectedIds: Set<string>;
 
-  load: () => Promise<void>;
   select: (id: string | null) => void;
   setSearch: (value: string) => void;
   setSort: (sort: SortKey) => void;
@@ -26,21 +28,10 @@ type NotesState = {
   toggleSidebar: () => void;
   setDrawerOpen: (open: boolean) => void;
 
-  /** Multi-select for bulk actions. */
-  selectMode: boolean;
-  selectedIds: Set<string>;
-
-  createNote: (category?: string, tags?: string[]) => Promise<string | null>;
-  updateNote: (id: string, patch: Partial<Note>) => void;
-  duplicateNote: (id: string) => Promise<void>;
-  deleteNote: (id: string, permanent?: boolean) => Promise<void>;
-  restoreNote: (id: string) => void;
-
   toggleSelected: (id: string) => void;
   setSelectedIds: (ids: Set<string>) => void;
   clearSelection: () => void;
   setSelectMode: (enabled: boolean) => void;
-  bulk: (action: BulkAction, ids: string[]) => Promise<void>;
 };
 
 export type BulkAction =
@@ -55,37 +46,7 @@ export type BulkAction =
   | "purge"
   | "emptyTrash";
 
-const timers = new Map<string, ReturnType<typeof setTimeout>>();
-
-/** Coalesces keystrokes into one PATCH per note. */
-function scheduleSync(id: string, patch: Partial<Note>, delay = 500) {
-  const existing = timers.get(id);
-  if (existing) clearTimeout(existing);
-
-  timers.set(
-    id,
-    setTimeout(() => {
-      timers.delete(id);
-      const url = `/api/notes/${id}`;
-      const body = JSON.stringify(patch);
-
-      void fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body,
-      }).catch(() => {
-        // Offline: keep the edit and replay it when the connection is back.
-        queueRequest(url, "PATCH", body);
-      });
-    }, delay),
-  );
-}
-
-export const useNotesStore = create<NotesState>((set, get) => ({
-  notes: [],
-  status: "idle",
-  error: null,
-
+export const useNotesStore = create<NotesState>((set) => ({
   selectedId: null,
   search: "",
   sort: "updated",
@@ -95,26 +56,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   selectMode: false,
   selectedIds: new Set<string>(),
 
-  async load() {
-    set({ status: "loading" });
-    try {
-      const response = await fetch("/api/notes");
-      if (!response.ok) throw new Error("Could not load notes");
-      const notes: Note[] = await response.json();
-      set((state) => ({
-        notes,
-        status: "ready",
-        error: null,
-        selectedId:
-          state.selectedId && notes.some((note) => note.id === state.selectedId)
-            ? state.selectedId
-            : null,
-      }));
-    } catch (error) {
-      set({ status: "error", error: (error as Error).message });
-    }
-  },
-
   select: (selectedId) => set({ selectedId }),
   setSearch: (search) => set({ search }),
   setSort: (sort) => set({ sort }),
@@ -122,151 +63,25 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
 
-  /** Seeds the new note with whatever the current route implies. */
-  async createNote(category = "Personal", tags = []) {
-    const response = await fetch("/api/notes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Untitled note", content: "", category, tags }),
-    });
-    if (!response.ok) return null;
-
-    const note: Note = await response.json();
-    set((state) => ({ notes: [note, ...state.notes], selectedId: note.id }));
-    return note.id;
-  },
-
-  updateNote(id, patch) {
-    const now = new Date().toISOString();
-    set((state) => ({
-      notes: state.notes.map((note) =>
-        note.id === id ? { ...note, ...patch, updatedAt: now } : note,
-      ),
-    }));
-    scheduleSync(id, patch);
-  },
-
-  async duplicateNote(id) {
-    const source = get().notes.find((note) => note.id === id);
-    if (!source) return;
-
-    const response = await fetch("/api/notes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: `${source.title} (copy)`,
-        content: source.content,
-        category: source.category,
-        tags: source.tags,
-      }),
-    });
-    if (!response.ok) return;
-
-    const note: Note = await response.json();
-    set((state) => ({ notes: [note, ...state.notes], selectedId: note.id }));
-  },
-
-  /** Moves the note to the trash; `permanent` removes the row for good. */
-  async deleteNote(id, permanent = false) {
-    const previous = get().notes;
-    const stamp = new Date().toISOString();
-
-    set((state) => ({
-      notes: permanent
-        ? state.notes.filter((note) => note.id !== id)
-        : state.notes.map((note) =>
-            note.id === id ? { ...note, deletedAt: stamp } : note,
-          ),
-      selectedId: state.selectedId === id ? null : state.selectedId,
-    }));
-
-    const response = await fetch(
-      `/api/notes/${id}${permanent ? "?permanent=true" : ""}`,
-      { method: "DELETE" },
-    );
-    if (!response.ok) set({ notes: previous });
-  },
-
-  restoreNote(id) {
-    set((state) => ({
-      notes: state.notes.map((note) =>
-        note.id === id ? { ...note, deletedAt: null } : note,
-      ),
-    }));
-    void fetch(`/api/notes/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deletedAt: null }),
-    });
-  },
-
-  toggleSelected(id) {
+  toggleSelected: (id) =>
     set((state) => {
       const next = new Set(state.selectedIds);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return { selectedIds: next };
-    });
-  },
+    }),
 
   setSelectedIds: (selectedIds) => set({ selectedIds }),
   clearSelection: () => set({ selectedIds: new Set(), selectMode: false }),
   setSelectMode: (selectMode) =>
     set(selectMode ? { selectMode } : { selectMode, selectedIds: new Set() }),
-
-  async bulk(action, ids) {
-    const previous = get().notes;
-
-    // Reflect the change immediately, then reconcile with the server.
-    set((state) => ({
-      notes: state.notes
-        .map((note) => {
-          if (action !== "emptyTrash" && !ids.includes(note.id)) return note;
-          switch (action) {
-            case "archive":
-              return { ...note, archived: true };
-            case "unarchive":
-              return { ...note, archived: false };
-            case "favorite":
-              return { ...note, favorite: true };
-            case "unfavorite":
-              return { ...note, favorite: false };
-            case "pin":
-              return { ...note, pinned: true };
-            case "unpin":
-              return { ...note, pinned: false };
-            case "trash":
-              return { ...note, deletedAt: new Date().toISOString() };
-            case "restore":
-              return { ...note, deletedAt: null };
-            default:
-              return note;
-          }
-        })
-        .filter((note) =>
-          action === "purge"
-            ? !ids.includes(note.id)
-            : action === "emptyTrash"
-              ? !note.deletedAt
-              : true,
-        ),
-      selectedIds: new Set(),
-      selectMode: false,
-    }));
-
-    const response = await fetch("/api/notes/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ids }),
-    });
-    if (!response.ok) set({ notes: previous });
-  },
 }));
 
-/**
- * The route decides which notes are on screen, so filtering is a plain function
- * rather than store state.
- */
+/* -------------------------------------------------------------------------- */
+/*  Derivations over the notes the cache handed back                          */
+/* -------------------------------------------------------------------------- */
+
+/** The route decides which notes are on screen, so filtering is a pure function. */
 export function filterNotes(
   notes: Note[],
   filter: NoteFilter,
@@ -332,51 +147,45 @@ export function filterNotes(
     });
 }
 
-export function selectAllTags(state: NotesState) {
+const live = (note: Note) => !note.archived && !note.deletedAt;
+
+export function allTags(notes: Note[]) {
   const tags = new Set<string>();
-  for (const note of state.notes) {
-    if (!note.archived && !note.deletedAt) {
-      for (const tag of note.tags) tags.add(tag);
-    }
+  for (const note of notes) {
+    if (live(note)) for (const tag of note.tags) tags.add(tag);
   }
   return [...tags].sort();
 }
 
-/** Tag name -> how many live notes carry it. */
-export function selectTagCounts(state: NotesState) {
+export function tagCounts(notes: Note[]) {
   const counts: Record<string, number> = {};
-  for (const note of state.notes) {
-    if (note.archived || note.deletedAt) continue;
+  for (const note of notes) {
+    if (!live(note)) continue;
     for (const tag of note.tags) counts[tag] = (counts[tag] ?? 0) + 1;
   }
   return counts;
 }
 
-export function selectCategoryCounts(state: NotesState) {
+export function categoryCounts(notes: Note[]) {
   const counts: Record<string, number> = {};
-  for (const note of state.notes) {
-    if (note.archived || note.deletedAt) continue;
+  for (const note of notes) {
+    if (!live(note)) continue;
     counts[note.category] = (counts[note.category] ?? 0) + 1;
   }
   return counts;
 }
 
-export function selectArchivedCount(state: NotesState) {
-  return state.notes.filter((note) => note.archived && !note.deletedAt).length;
-}
-
-export function selectFavoriteCount(state: NotesState) {
-  return state.notes.filter(
-    (note) => note.favorite && !note.archived && !note.deletedAt,
-  ).length;
-}
-
-export function selectPinnedCount(state: NotesState) {
-  return state.notes.filter(
-    (note) => note.pinned && !note.archived && !note.deletedAt,
-  ).length;
-}
-
-export function selectTrashedCount(state: NotesState) {
-  return state.notes.filter((note) => note.deletedAt).length;
+export function countBy(notes: Note[], kind: "archived" | "favorite" | "pinned" | "trashed") {
+  return notes.filter((note) => {
+    switch (kind) {
+      case "archived":
+        return note.archived && !note.deletedAt;
+      case "favorite":
+        return note.favorite && live(note);
+      case "pinned":
+        return note.pinned && live(note);
+      default:
+        return Boolean(note.deletedAt);
+    }
+  }).length;
 }

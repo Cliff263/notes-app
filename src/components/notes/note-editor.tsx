@@ -2,7 +2,6 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
-import { useShallow } from "zustand/react/shallow";
 import {
   Archive,
   ArchiveRestore,
@@ -46,14 +45,14 @@ import {
   stripMarkdown,
   wordCount,
 } from "@/lib/utils";
-import { useEventsStore } from "@/store/events-store";
+import { useEvents, useEventActions } from "@/hooks/use-events";
+import { useNote, useNoteActions, useNoteAutosave } from "@/hooks/use-notes";
 import { MarkdownPreview } from "./markdown-preview";
 import { useNotesStore } from "@/store/notes-store";
 
 export function NoteEditor() {
-  const note = useNotesStore((state) =>
-    state.notes.find((item) => item.id === state.selectedId),
-  );
+  const selectedId = useNotesStore((state) => state.selectedId);
+  const note = useNote(selectedId);
   const { isDesktop } = useBreakpoint();
 
   /*
@@ -108,9 +107,8 @@ export function NoteEditor() {
 }
 
 function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
-  const updateNote = useNotesStore((state) => state.updateNote);
-  const deleteNote = useNotesStore((state) => state.deleteNote);
-  const duplicateNote = useNotesStore((state) => state.duplicateNote);
+  const { deleteNote, duplicateNote } = useNoteActions();
+  const updateNote = useNoteAutosave();
   const select = useNotesStore((state) => state.select);
 
   const [tagDraft, setTagDraft] = useState("");
@@ -119,18 +117,13 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const [mode, setMode] = useState<"write" | "preview">("write");
   const [scheduling, setScheduling] = useState(false);
 
-  const createEvent = useEventsStore((state) => state.createEvent);
-  const events = useEventsStore(useShallow((state) => state.events));
-  const loadEvents = useEventsStore((state) => state.load);
-  const eventsStatus = useEventsStore((state) => state.status);
+  const { createEvent } = useEventActions();
+  // The editor needs events to show what this note is already linked to;
+  // React Query dedupes this with the calendar page's own query.
+  const { data: events = [] } = useEvents();
 
   const linkedEvents = events.filter((event) => event.noteId === note.id);
   const scheduled = linkedEvents.length > 0;
-
-  useEffect(() => {
-    // The editor needs events to show what this note is already linked to.
-    if (eventsStatus === "idle") void loadEvents();
-  }, [eventsStatus, loadEvents]);
   const menuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -314,7 +307,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                   label="Duplicate"
                   onClick={() => {
                     setMenuOpen(false);
-                    void duplicateNote(note.id);
+                    duplicateNote(note);
                   }}
                 />
 

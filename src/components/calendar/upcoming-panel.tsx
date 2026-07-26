@@ -3,8 +3,8 @@
 import { motion } from "framer-motion";
 import { CalendarClock, Clock, FileText, MapPin } from "lucide-react";
 import Link from "next/link";
-import { useShallow } from "zustand/react/shallow";
 import { ROUTES } from "@/lib/routes";
+import { useNotes } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 import type { CalendarEvent } from "@/lib/types";
 import {
@@ -29,7 +29,7 @@ export function UpcomingPanel({
 }) {
   const now = useNow();
   const select = useNotesStore((state) => state.select);
-  const notes = useNotesStore(useShallow((state) => state.notes));
+  const { data: notes = [] } = useNotes();
 
   // Notes carrying a due date show alongside the schedule.
   const dueNotes = notes

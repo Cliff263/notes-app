@@ -3,26 +3,20 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Hash, Search } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
+import { useMemo, useState } from "react";
 import { MobileNav } from "@/components/mobile-nav";
 import { MobileTopBar } from "@/components/mobile-top-bar";
 import { Sidebar } from "@/components/sidebar";
 import { SidebarDrawer } from "@/components/sidebar-drawer";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ROUTES } from "@/lib/routes";
+import { useNotes } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 
 export default function TagsPage() {
-  const load = useNotesStore((state) => state.load);
-  const status = useNotesStore((state) => state.status);
   const sidebarOpen = useNotesStore((state) => state.sidebarOpen);
-  const notes = useNotesStore(useShallow((state) => state.notes));
+  const { data: notes = [] } = useNotes();
   const [query, setQuery] = useState("");
-
-  useEffect(() => {
-    if (status === "idle") void load();
-  }, [status, load]);
 
   /** Every tag with its count and a couple of example notes. */
   const tags = useMemo(() => {

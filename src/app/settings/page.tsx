@@ -11,29 +11,21 @@ import { SHORTCUTS } from "@/components/shortcuts";
 import { SidebarDrawer } from "@/components/sidebar-drawer";
 import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
+import { useAccount, useDeleteAccount, useUpdateAccount } from "@/hooks/use-account";
 import { useNotesStore } from "@/store/notes-store";
 
 type InstallPromptEvent = Event & { prompt: () => Promise<void> };
 
-type Account = {
-  name: string | null;
-  email: string;
-  createdAt: string;
-  hasPassword: boolean;
-  noteCount: number;
-  eventCount: number;
-};
-
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
-  const loadNotes = useNotesStore((state) => state.load);
-  const notesStatus = useNotesStore((state) => state.status);
   const view = useNotesStore((state) => state.view);
   const setView = useNotesStore((state) => state.setView);
   const sidebarOpen = useNotesStore((state) => state.sidebarOpen);
 
-  const [account, setAccount] = useState<Account | null>(null);
-  const [name, setName] = useState("");
+  const { data: account } = useAccount();
+  const updateAccount = useUpdateAccount();
+  const deleteAccountMutation = useDeleteAccount();
+  const [draftName, setDraftName] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -49,39 +41,24 @@ export default function SettingsPage() {
     return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
 
-  useEffect(() => {
-    if (notesStatus === "idle") void loadNotes();
-  }, [notesStatus, loadNotes]);
-
-  useEffect(() => {
-    void (async () => {
-      const response = await fetch("/api/account");
-      if (!response.ok) return;
-      const data: Account = await response.json();
-      setAccount(data);
-      setName(data.name ?? "");
-    })();
-  }, []);
+  // The field shows the saved name until the user types, so no effect is
+  // needed to seed it once the account query resolves.
+  const name = draftName ?? account?.name ?? "";
 
   async function saveName() {
     if (!name.trim() || name === account?.name) return;
     setSaveState("saving");
-    const response = await fetch("/api/account", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (response.ok) {
-      setAccount((current) => (current ? { ...current, name } : current));
+    try {
+      await updateAccount.mutateAsync(name);
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 1600);
-    } else {
+    } catch {
       setSaveState("idle");
     }
   }
 
   async function deleteAccount() {
-    await fetch("/api/account", { method: "DELETE" });
+    await deleteAccountMutation.mutateAsync();
     await signOut({ redirectTo: "/login" });
   }
 
@@ -125,7 +102,7 @@ export default function SettingsPage() {
               <div className="flex gap-2">
                 <input
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => setDraftName(event.target.value)}
                   onBlur={saveName}
                   placeholder="Your name"
                   className="h-9 flex-1 rounded-lg border border-line field bg-input px-3 transition focus:border-line-strong"

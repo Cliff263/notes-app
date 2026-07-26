@@ -4,12 +4,12 @@ import { motion } from "framer-motion";
 import { CalendarClock, Check, Pin, RotateCcw, Star } from "lucide-react";
 import type { Note } from "@/lib/types";
 import { cn, readingTime, relativeTime, shortDate, stripMarkdown } from "@/lib/utils";
+import { useNoteActions } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 
 export function NoteCard({ note, selected }: { note: Note; selected: boolean }) {
   const select = useNotesStore((state) => state.select);
-  const updateNote = useNotesStore((state) => state.updateNote);
-  const restoreNote = useNotesStore((state) => state.restoreNote);
+  const { updateNote, restoreNote } = useNoteActions();
   const selectMode = useNotesStore((state) => state.selectMode);
   const toggleSelected = useNotesStore((state) => state.toggleSelected);
   const checked = useNotesStore((state) => state.selectedIds.has(note.id));

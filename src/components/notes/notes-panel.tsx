@@ -17,17 +17,16 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { describeFilter } from "@/lib/routes";
 import { SORT_OPTIONS, type NoteFilter } from "@/lib/types";
 import { cn, wordCount } from "@/lib/utils";
+import { useNotes, useNoteActions } from "@/hooks/use-notes";
 import { filterNotes, useNotesStore } from "@/store/notes-store";
 import { NoteCard } from "./note-card";
 
 export function NotesPanel({ filter }: { filter: NoteFilter }) {
-  const allNotes = useNotesStore(useShallow((state) => state.notes));
-  const status = useNotesStore((state) => state.status);
+  const { data: allNotes = [], isPending } = useNotes();
   const search = useNotesStore((state) => state.search);
   const setSearch = useNotesStore((state) => state.setSearch);
   const view = useNotesStore((state) => state.view);
@@ -40,9 +39,7 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
   const setSelectMode = useNotesStore((state) => state.setSelectMode);
   const selectedIds = useNotesStore((state) => state.selectedIds);
   const setSelectedIds = useNotesStore((state) => state.setSelectedIds);
-  const bulk = useNotesStore((state) => state.bulk);
-  const createNote = useNotesStore((state) => state.createNote);
-  const updateNote = useNotesStore((state) => state.updateNote);
+  const { createNote, updateNote, bulk } = useNoteActions();
 
   const notes = useMemo(
     () => filterNotes(allNotes, filter, search, sort),
@@ -274,7 +271,7 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
       </AnimatePresence>
 
       <div className="pb-navbar min-h-0 flex-1 overflow-y-auto p-3 scroll-thin">
-        {status === "loading" && allNotes.length === 0 ? (
+        {isPending && allNotes.length === 0 ? (
           <SkeletonList />
         ) : notes.length === 0 ? (
           <EmptyState

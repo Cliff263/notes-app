@@ -22,20 +22,12 @@ import {
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, type ComponentType } from "react";
-import { useShallow } from "zustand/react/shallow";
+import { useMemo, useState, type ComponentType } from "react";
 import { ROUTES } from "@/lib/routes";
 import { CATEGORIES } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import {
-  selectAllTags,
-  selectArchivedCount,
-  selectCategoryCounts,
-  selectFavoriteCount,
-  selectPinnedCount,
-  selectTrashedCount,
-  useNotesStore,
-} from "@/store/notes-store";
+import { useNotes, useNoteActions } from "@/hooks/use-notes";
+import { allTags, categoryCounts, countBy, useNotesStore } from "@/store/notes-store";
 
 const CATEGORY_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   Personal: User,
@@ -51,16 +43,15 @@ export function Sidebar() {
   const [categoriesOpen, setCategoriesOpen] = useState(true);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const createNote = useNotesStore((state) => state.createNote);
+  const { createNote } = useNoteActions();
   const setDrawerOpen = useNotesStore((state) => state.setDrawerOpen);
-  // These selectors build a fresh array/object, so they need a shallow compare
-  // to keep useSyncExternalStore from looping.
-  const tags = useNotesStore(useShallow(selectAllTags));
-  const counts = useNotesStore(useShallow(selectCategoryCounts));
-  const favoriteCount = useNotesStore(selectFavoriteCount);
-  const pinnedCount = useNotesStore(selectPinnedCount);
-  const archivedCount = useNotesStore(selectArchivedCount);
-  const trashedCount = useNotesStore(selectTrashedCount);
+  const { data: notes = [] } = useNotes();
+  const tags = useMemo(() => allTags(notes), [notes]);
+  const counts = useMemo(() => categoryCounts(notes), [notes]);
+  const favoriteCount = useMemo(() => countBy(notes, "favorite"), [notes]);
+  const pinnedCount = useMemo(() => countBy(notes, "pinned"), [notes]);
+  const archivedCount = useMemo(() => countBy(notes, "archived"), [notes]);
+  const trashedCount = useMemo(() => countBy(notes, "trashed"), [notes]);
 
   /** Navigating from the drawer should also dismiss it. */
   const closeDrawer = () => setDrawerOpen(false);

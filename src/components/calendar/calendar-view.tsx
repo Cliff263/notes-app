@@ -12,7 +12,7 @@ import {
   timeLabel,
 } from "@/lib/utils";
 import { useBreakpoint } from "@/lib/use-media-query";
-import { dayKey, selectEventsByDay } from "@/store/events-store";
+import { dayKey, eventsByDay } from "@/lib/calendar";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -42,7 +42,7 @@ export function CalendarView({
     () => monthGrid(cursor.getFullYear(), cursor.getMonth()),
     [cursor],
   );
-  const byDay = useMemo(() => selectEventsByDay(events), [events]);
+  const byDay = useMemo(() => eventsByDay(events), [events]);
 
   function move(step: 1 | -1) {
     setDirection(step);

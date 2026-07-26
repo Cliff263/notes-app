@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ROUTES } from "@/lib/routes";
 import { CATEGORIES } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useNoteActions } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 
 const NOTE_ROUTES = ["/", "/favorites", "/pinned", "/archive", "/trash"];
@@ -15,7 +16,7 @@ const NOTE_ROUTES = ["/", "/favorites", "/pinned", "/archive", "/trash"];
 export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const createNote = useNotesStore((state) => state.createNote);
+  const { createNote } = useNoteActions();
   const select = useNotesStore((state) => state.select);
 
   const onNotes =

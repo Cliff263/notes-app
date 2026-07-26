@@ -2,8 +2,9 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ROUTES } from "@/lib/routes";
+import { useNotes, useNoteActions } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 
 export const SHORTCUTS: Array<{ keys: string; description: string }> = [
@@ -24,6 +25,18 @@ export function Shortcuts() {
   const router = useRouter();
   const [helpOpen, setHelpOpen] = useState(false);
 
+  const { data: notes = [] } = useNotes();
+  const actions = useNoteActions();
+
+  /*
+   * The keydown listener is registered once, so it reads the latest notes and
+   * mutations through a ref rather than re-subscribing on every cache update.
+   */
+  const latest = useRef({ notes, actions });
+  useEffect(() => {
+    latest.current = { notes, actions };
+  }, [notes, actions]);
+
   useEffect(() => {
     let awaitingGo = false;
     let goTimer: ReturnType<typeof setTimeout> | null = null;
@@ -38,7 +51,8 @@ export function Shortcuts() {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const store = useNotesStore.getState();
-      const note = store.notes.find((item) => item.id === store.selectedId);
+      const { notes: current, actions: act } = latest.current;
+      const note = current.find((item) => item.id === store.selectedId);
 
       if (event.key === "Escape") {
         if (helpOpen) setHelpOpen(false);
@@ -79,7 +93,7 @@ export function Shortcuts() {
           break;
         case "n":
           event.preventDefault();
-          void store.createNote();
+          void act.createNote();
           break;
         case "/": {
           event.preventDefault();
@@ -88,13 +102,13 @@ export function Shortcuts() {
           break;
         }
         case "e":
-          if (note) store.updateNote(note.id, { favorite: !note.favorite });
+          if (note) act.updateNote(note.id, { favorite: !note.favorite });
           break;
         case "p":
-          if (note) store.updateNote(note.id, { pinned: !note.pinned });
+          if (note) act.updateNote(note.id, { pinned: !note.pinned });
           break;
         case "a":
-          if (note) store.updateNote(note.id, { archived: !note.archived });
+          if (note) act.updateNote(note.id, { archived: !note.archived });
           break;
         case "?":
           setHelpOpen(true);

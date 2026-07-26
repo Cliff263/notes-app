@@ -1,7 +1,6 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect } from "react";
 import { MobileNav } from "@/components/mobile-nav";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { NotesPanel } from "@/components/notes/notes-panel";
@@ -14,19 +13,15 @@ import { useNotesStore } from "@/store/notes-store";
  * The shell every note route renders. Desktop is three panes; below lg the
  * sidebar becomes a drawer, the tab bar appears, and the editor is a
  * full-screen sheet — all from the same component instances.
+ *
+ * Data loading happens in the panes themselves now: React Query dedupes the
+ * request, so no coordinating fetch is needed here.
  */
 export function Workspace({ filter }: { filter: NoteFilter }) {
-  const load = useNotesStore((state) => state.load);
-  const status = useNotesStore((state) => state.status);
   const sidebarOpen = useNotesStore((state) => state.sidebarOpen);
-
-  useEffect(() => {
-    if (status === "idle") void load();
-  }, [status, load]);
 
   return (
     <main className="flex h-dvh overflow-hidden bg-background">
-      {/* Desktop column */}
       <AnimatePresence initial={false}>
         {sidebarOpen && (
           <motion.div

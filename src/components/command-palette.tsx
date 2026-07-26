@@ -19,10 +19,10 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
-import { useShallow } from "zustand/react/shallow";
 import { useTheme } from "@/components/theme-provider";
 import { ROUTES } from "@/lib/routes";
 import { cn, stripMarkdown } from "@/lib/utils";
+import { useNotes, useNoteActions } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 
 type Command = {
@@ -37,11 +37,10 @@ type Command = {
 export function CommandPalette() {
   const router = useRouter();
   const { toggleTheme } = useTheme();
-  const notes = useNotesStore(useShallow((state) => state.notes));
-  const createNote = useNotesStore((state) => state.createNote);
+  const { data: notes = [] } = useNotes();
+  const { createNote, updateNote } = useNoteActions();
   const select = useNotesStore((state) => state.select);
   const selectedId = useNotesStore((state) => state.selectedId);
-  const updateNote = useNotesStore((state) => state.updateNote);
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");

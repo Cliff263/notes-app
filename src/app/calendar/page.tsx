@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CalendarView } from "@/components/calendar/calendar-view";
 import {
   EventModal,
@@ -12,14 +12,11 @@ import { MobileNav } from "@/components/mobile-nav";
 import { MobileTopBar } from "@/components/mobile-top-bar";
 import { Sidebar } from "@/components/sidebar";
 import { SidebarDrawer } from "@/components/sidebar-drawer";
-import { useEventsStore } from "@/store/events-store";
+import { useEvents } from "@/hooks/use-events";
 import { useNotesStore } from "@/store/notes-store";
 
 export default function CalendarPage() {
-  const loadEvents = useEventsStore((state) => state.load);
-  const events = useEventsStore((state) => state.events);
-  const loadNotes = useNotesStore((state) => state.load);
-  const notesStatus = useNotesStore((state) => state.status);
+  const { data: events = [] } = useEvents();
   const sidebarOpen = useNotesStore((state) => state.sidebarOpen);
 
   const [cursor, setCursor] = useState(() => {
@@ -28,15 +25,6 @@ export default function CalendarPage() {
   });
   const [selectedDay, setSelectedDay] = useState(() => new Date());
   const [modal, setModal] = useState<EventModalState>({ mode: "closed" });
-
-  useEffect(() => {
-    void loadEvents();
-  }, [loadEvents]);
-
-  // The sidebar shows categories and tags, so it needs the notes too.
-  useEffect(() => {
-    if (notesStatus === "idle") void loadNotes();
-  }, [notesStatus, loadNotes]);
 
   return (
     <main className="flex h-dvh overflow-hidden bg-background">

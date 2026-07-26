@@ -5,7 +5,7 @@ import { Loader2, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { EVENT_COLORS, type CalendarEvent, type EventColor } from "@/lib/types";
 import { cn, EVENT_COLOR_VALUES, toLocalInputValue } from "@/lib/utils";
-import { useEventsStore, type EventDraft } from "@/store/events-store";
+import { useEventActions, type EventDraft } from "@/hooks/use-events";
 
 export type EventModalState =
   | { mode: "closed" }
@@ -53,9 +53,7 @@ function EventForm({
   state: Exclude<EventModalState, { mode: "closed" }>;
   onClose: () => void;
 }) {
-  const createEvent = useEventsStore((store) => store.createEvent);
-  const updateEvent = useEventsStore((store) => store.updateEvent);
-  const deleteEvent = useEventsStore((store) => store.deleteEvent);
+  const { createEvent, updateEvent, deleteEvent } = useEventActions();
 
   const [draft, setDraft] = useState<EventDraft>(() => initialDraft(state));
   const [saving, setSaving] = useState(false);
