@@ -1,9 +1,21 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Download, Loader2, LogOut, Moon, Sun, Trash2 } from "lucide-react";
+import {
+  Bell,
+  BellOff,
+  CalendarArrowDown,
+  CalendarArrowUp,
+  Check,
+  Download,
+  Loader2,
+  LogOut,
+  Moon,
+  Sun,
+  Trash2,
+} from "lucide-react";
 import { signOut } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MobileNav } from "@/components/mobile-nav";
 import { MobileTopBar } from "@/components/mobile-top-bar";
 import { Sidebar } from "@/components/sidebar";
@@ -12,7 +24,10 @@ import { SidebarDrawer } from "@/components/sidebar-drawer";
 import { TextReveal } from "@/components/motion";
 import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
+import { api, ApiError } from "@/lib/api";
+import { publicVapidKey } from "@/lib/push-key";
 import { useAccount, useDeleteAccount, useUpdateAccount } from "@/hooks/use-account";
+import { usePushToggle } from "@/hooks/use-push";
 import { useNotesStore } from "@/store/notes-store";
 
 type InstallPromptEvent = Event & { prompt: () => Promise<void> };
@@ -31,6 +46,34 @@ export default function SettingsPage() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+
+  const icsRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+
+  async function importIcs(file: File) {
+    setImporting(true);
+    setImportMessage(null);
+
+    const form = new FormData();
+    form.append("file", file);
+
+    try {
+      const result = await api<{ imported: number }>("/api/events/ics", {
+        method: "POST",
+        body: form,
+      });
+      setImportMessage(
+        `Added ${result.imported} event${result.imported === 1 ? "" : "s"} from ${file.name}.`,
+      );
+    } catch (error) {
+      setImportMessage(
+        error instanceof ApiError ? error.message : "That file could not be read",
+      );
+    } finally {
+      setImporting(false);
+    }
+  }
 
   useEffect(() => {
     // Chromium fires this when the app qualifies for installation.
@@ -233,6 +276,60 @@ export default function SettingsPage() {
             </div>
           </Card>
 
+          <Card title="Calendar" delay={0.16}>
+            <div>
+              <p className="text-[13px]">Take your calendar with you</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-muted-2">
+                Download every event as an .ics file, or bring one in from
+                another calendar. Repeats travel as a standard RRULE, so they
+                survive the round trip.
+              </p>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = "/api/events/ics";
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12px] text-muted transition hover:bg-card-hover hover:text-foreground"
+                >
+                  <CalendarArrowDown className="size-3.5" />
+                  Export .ics
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => icsRef.current?.click()}
+                  disabled={importing}
+                  className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12px] text-muted transition hover:bg-card-hover hover:text-foreground disabled:opacity-50"
+                >
+                  <CalendarArrowUp className="size-3.5" />
+                  {importing ? "Importing…" : "Import .ics"}
+                </button>
+
+                <input
+                  ref={icsRef}
+                  type="file"
+                  accept=".ics,text/calendar"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void importIcs(file);
+                  }}
+                />
+              </div>
+
+              {importMessage && (
+                <p className="mt-2 text-[11px] text-muted">{importMessage}</p>
+              )}
+            </div>
+
+            <div className="border-t border-line pt-4">
+              <PushToggle />
+            </div>
+          </Card>
+
           <Card title="Install" delay={0.17}>
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -327,6 +424,62 @@ export default function SettingsPage() {
 
       <MobileNav />
     </main>
+  );
+}
+
+/**
+ * Reminders, which need three separate yeses: the deployment has VAPID keys,
+ * the browser supports push, and the person grants permission. Each "no" says
+ * which one it was, because "unavailable" on its own is infuriating.
+ */
+function PushToggle() {
+  const { state, error, enable, disable } = usePushToggle(publicVapidKey);
+
+  const copy = {
+    unsupported: "This browser cannot receive push notifications.",
+    unconfigured:
+      "Not available on this deployment — it needs VAPID keys. See the README.",
+    "no-worker":
+      "Reminders arrive through the app's service worker, which only runs in a production build.",
+    denied:
+      "Notifications are blocked for this site. Allow them in your browser settings and come back.",
+    off: "Get a nudge shortly before an event starts, and when a note falls due.",
+    on: "This device will be reminded before an event starts, and when a note falls due.",
+    working: "One moment…",
+  }[state];
+
+  const actionable = state === "on" || state === "off";
+
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-[13px]">Reminders on this device</p>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-muted-2">{copy}</p>
+        {error && <p className="mt-1 text-[11px] text-danger">{error}</p>}
+      </div>
+
+      <button
+        type="button"
+        disabled={!actionable}
+        onClick={() => (state === "on" ? void disable() : void enable())}
+        className={cn(
+          "flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] transition",
+          state === "on"
+            ? "border-transparent bg-btn text-btn-foreground hover:opacity-90"
+            : "border-line text-muted hover:bg-card-hover hover:text-foreground",
+          !actionable && "cursor-not-allowed opacity-50",
+        )}
+      >
+        {state === "working" ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : state === "on" ? (
+          <Bell className="size-3.5" />
+        ) : (
+          <BellOff className="size-3.5" />
+        )}
+        {state === "on" ? "On" : "Turn on"}
+      </button>
+    </div>
   );
 }
 

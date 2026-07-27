@@ -17,6 +17,8 @@ export type EventDraft = {
   allDay: boolean;
   color: string;
   noteId?: string | null;
+  /** An RRULE subset, or null for a one-off. */
+  recurrence?: string | null;
 };
 
 export function useEvents() {

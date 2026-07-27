@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { events } from "@/db/schema";
+import { normaliseRecurrence } from "@/lib/recurrence";
 import { serializeEvent } from "@/lib/serialize";
 import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
 
@@ -46,6 +47,9 @@ export async function POST(request: Request) {
         allDay: Boolean(body.allDay),
         color: typeof body.color === "string" ? body.color : "violet",
         noteId: typeof body.noteId === "string" ? body.noteId : null,
+        // Parsed and re-formatted rather than trusted, so nothing but the
+        // subset we can actually expand is ever stored.
+        recurrence: normaliseRecurrence(body.recurrence),
       })
       .returning();
 

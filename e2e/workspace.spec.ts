@@ -341,6 +341,121 @@ test.describe("attachments", () => {
   });
 });
 
+test.describe("calendar views", () => {
+  test("each view has its own URL and heading", async ({ page }) => {
+    await page.goto("/calendar");
+    await expect(page.getByRole("heading").first()).toBeVisible();
+
+    await page.getByRole("button", { name: "week", exact: true }).click();
+    await expect(page).toHaveURL(/view=week/);
+    // The week grid puts the weekday letters above the hour rail.
+    await expect(page.getByText("9 am").first()).toBeVisible();
+
+    await page.getByRole("button", { name: "day", exact: true }).click();
+    await expect(page).toHaveURL(/view=day/);
+
+    await page.getByRole("button", { name: "agenda", exact: true }).click();
+    await expect(page).toHaveURL(/view=agenda/);
+    await expect(page.getByRole("heading", { name: "The next 30 days" })).toBeVisible();
+  });
+
+  test("a view survives a reload, because it is in the address", async ({ page }) => {
+    await page.goto("/calendar?view=agenda");
+    await expect(page.getByRole("heading", { name: "The next 30 days" })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "The next 30 days" })).toBeVisible();
+  });
+
+  test("a repeating event appears on every occurrence, from one row", async ({ page }) => {
+    await page.goto("/calendar?view=agenda");
+
+    // The seed has one daily standup; the agenda covers thirty days.
+    const standups = page.getByText("Daily Standup");
+    // count() does not wait, so wait for the events query before counting.
+    await expect(standups.first()).toBeVisible();
+    expect(await standups.count()).toBeGreaterThan(5);
+  });
+
+  test("editing an occurrence edits the series behind it", async ({ page }) => {
+    await page.goto("/calendar?view=agenda");
+
+    // Open the *second* occurrence — a synthetic one, not the stored row.
+    await page.getByText("Daily Standup").nth(1).click();
+    await expect(page.getByRole("heading", { name: "Edit event" })).toBeVisible();
+    // The repeat rule is the series', so it must have come from the stored row.
+    await expect(page.getByRole("button", { name: "Daily", exact: true })).toHaveClass(
+      /bg-btn/,
+    );
+  });
+});
+
+test.describe("calendar files", () => {
+  test("the calendar exports as an .ics with its repeats intact", async ({ page }) => {
+    await page.goto("/settings");
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Export .ics" }).click(),
+    ]);
+
+    expect(download.suggestedFilename()).toMatch(/\.ics$/);
+
+    const stream = await download.createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    const text = Buffer.concat(chunks).toString("utf8");
+
+    expect(text).toContain("BEGIN:VCALENDAR");
+    expect(text).toContain("SUMMARY:Daily Standup");
+    expect(text).toContain("RRULE:FREQ=DAILY");
+  });
+
+  test("an uploaded .ics adds its events", async ({ page }) => {
+    await page.goto("/settings");
+
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:imported@example.test",
+      "DTSTART:20260814T140000Z",
+      "DTEND:20260814T150000Z",
+      "SUMMARY:Imported from elsewhere",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    await page.locator('input[accept*="ics"]').setInputFiles({
+      name: "other-calendar.ics",
+      mimeType: "text/calendar",
+      buffer: Buffer.from(ics),
+    });
+
+    await expect(page.getByText(/Added 1 event/)).toBeVisible();
+
+    await page.goto("/calendar?view=agenda&date=2026-08-14");
+    await expect(page.getByText("Imported from elsewhere").first()).toBeVisible();
+  });
+});
+
+test.describe("reminders", () => {
+  test("the sending endpoint refuses anyone without the shared secret", async ({
+    request,
+  }) => {
+    const response = await request.post("/api/push/send-due");
+    // 503 when CRON_SECRET is unset, 401 when it is set and not presented.
+    expect([401, 503]).toContain(response.status());
+  });
+
+  test("a subscription needs its keys", async ({ request }) => {
+    const response = await request.post("/api/push/subscribe", {
+      data: { endpoint: "https://push.example.test/abc" },
+    });
+    expect(response.status()).toBe(400);
+  });
+});
+
 test.describe("command palette", () => {
   test("opens on the shortcut and finds a note", async ({ page }) => {
     await page.keyboard.press("ControlOrMeta+k");

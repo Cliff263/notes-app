@@ -32,7 +32,7 @@ survive a refresh:
 | `/category/[category]` | Personal, Work, Ideas or Journal |
 | `/tags` | Every tag with its count and example notes |
 | `/tags/[tag]` | Notes carrying that tag |
-| `/calendar` | Month view and what's upcoming |
+| `/calendar` | Month, week, day and agenda views, plus what's upcoming |
 | `/settings` | Profile, appearance, export, account |
 | `/s/[token]` | A shared note, readable without an account |
 
@@ -128,10 +128,55 @@ depends on the browser's print dialog.
 
 **Calendar** (`/calendar`)
 
-- Month grid with a glowing "today" cell over a faint grid backdrop
-- Coloured event pills; click one to edit, double-click a day to add one
+Four views, each a real address — `?view=week&date=2026-07-27` is a link you can
+send someone, and a refresh comes back to where you were:
+
+| View | What it is for |
+| --- | --- |
+| Month | The shape of the month. A glowing "today" cell over a faint grid. |
+| Week | Seven columns of hours, with all-day events in a strip above and a line across today at the current time. |
+| Day | The same grid, one column wide. |
+| Agenda | The next thirty days as a list, grouped by day — the view that answers "what is actually happening". |
+
+- Coloured event pills; click one to edit, double-click a day (or an hour, in
+  the week and day views) to add one there
+- Overlapping events share the column between them rather than hiding each other
 - A side panel with the selected day's schedule and what's coming next, labelled
   "Today", "Tomorrow", "in 3 days" and so on
+
+**Repeating events**
+
+An event can repeat daily, weekly, monthly or yearly, every *n* of those, and
+stop on a date or after a number of times. A repeating event is **one row**: the
+occurrences are worked out for whatever window a view is showing, so a daily
+standup does not become three hundred rows a year. Editing any occurrence edits
+the series behind it.
+
+The rule is stored as an RRULE, which is what a calendar file uses, so it needs
+no translation on the way out. Per-occurrence exceptions ("skip this Tuesday")
+are deliberately not supported.
+
+**Taking the calendar elsewhere**
+
+Settings has **Export .ics** and **Import .ics**. The exporter writes proper
+iCalendar — CRLF, escaped values, folded lines, RRULEs intact — and the importer
+reads files written by other calendars, including all-day events and `TZID`
+times. Importing adds; it never overwrites, because matching on another
+calendar's UID would mean trusting its idea of identity.
+
+**Reminders**
+
+Opt in per device from Settings and Square Notes will notify you shortly before
+an event starts and when a note falls due. It needs three things: VAPID keys on
+the deployment, a browser that supports push, and your permission — the toggle
+says which one is missing rather than just refusing.
+
+Delivery is driven by `POST /api/push/send-due`, guarded by `CRON_SECRET`;
+`vercel.json` schedules it every thirty minutes. There is no record of what has
+already been sent — each notification carries a `tag`, which is how the browser
+collapses a repeat into the one notification, so running the job more often than
+its window is harmless. A subscription the push service reports as gone is
+deleted rather than retried.
 
 **Account**
 
@@ -163,6 +208,11 @@ cp .env.example .env.local
 | `AUTH_GOOGLE_SECRET` | no | Same |
 | `RESEND_API_KEY` | no | Sends password-reset and confirmation email. Without it the links are logged to the server console instead, so the flow still works locally |
 | `EMAIL_FROM` | no | Defaults to Resend's onboarding sender |
+| `VAPID_PUBLIC_KEY` | no | Reminders. Generate a pair with `npx web-push generate-vapid-keys` |
+| `VAPID_PRIVATE_KEY` | no | The other half of that pair |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | no | The public key again, this time where the browser can read it |
+| `VAPID_SUBJECT` | no | A `mailto:` the push service can contact you at |
+| `CRON_SECRET` | no | Shared secret the reminder job must present. Unset, that endpoint answers 503 and reminders are never sent |
 
 Leave the Google variables unset and the "Continue with Google" button simply
 doesn't render — email/password still works.
@@ -179,7 +229,8 @@ npm run db:push
 Run this again after pulling changes that add columns or tables. Everything so
 far has been additive: `notes.deletedAt`, `notes.dueAt` and `events.noteId` for
 trash, due dates and note-to-event links, then the `noteVersion`, `noteShare`
-and `attachment` tables for history, sharing and files.
+and `attachment` tables for history, sharing and files, and most recently
+`events.recurrence` and the `pushSubscription` table for repeats and reminders.
 
 `db:push` finishes by running `db:extras`, which adds what a Drizzle schema
 cannot describe — today that is the GIN index behind full-text search, built
@@ -262,12 +313,12 @@ src/
     favorites/, pinned/, archive/ Note views
     category/[category]/          One view per category
     tags/, tags/[tag]/            Tag index and per-tag view
-    calendar/                     Calendar page
+    calendar/                     Calendar page (month, week, day, agenda)
     settings/                     Account, appearance and export
     page.tsx                      All notes
   components/
     auth/                         Auth shell and form
-    calendar/                     Month grid, upcoming panel, event modal
+    calendar/                     Month grid, time grid, agenda, upcoming panel, event modal
     notes/                        Note cards, list pane, editor
     sidebar.tsx                   Shared navigation
     workspace.tsx                 The three-pane shell each note route renders
@@ -277,6 +328,11 @@ src/
   auth.ts, auth.config.ts         Auth.js configuration
   proxy.ts                        Route protection (Next 16's middleware)
 ```
+
+A repeating event is stored once and expanded when a view asks for a range
+(`src/lib/recurrence.ts`), which is also what the reminder job uses to work out
+what is about to start. The same module parses the RRULE that goes into an .ics,
+so there is one definition of what "repeats" means.
 
 Every note and event row carries a `userId`, and each API route resolves the user
 from the session before it touches the database — a request can only ever read or

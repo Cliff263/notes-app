@@ -73,7 +73,7 @@ export default async function globalSetup() {
 
     for (const event of eventRows) {
       await client.query(
-        'insert into event (id, "userId", title, description, location, "startsAt", "endsAt", "allDay", color) values (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8)',
+        'insert into event (id, "userId", title, description, location, "startsAt", "endsAt", "allDay", color, recurrence) values (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9)',
         [
           event.userId,
           event.title,
@@ -83,6 +83,7 @@ export default async function globalSetup() {
           event.endsAt,
           event.allDay,
           event.color,
+          event.recurrence,
         ],
       );
     }

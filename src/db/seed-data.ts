@@ -22,6 +22,8 @@ type SeedEvent = {
   durationMinutes: number;
   allDay?: boolean;
   color: EventColor;
+  /** An RRULE subset; see lib/recurrence.ts. */
+  recurrence?: string;
 };
 
 export const SEED_NOTES: SeedNote[] = [
@@ -280,6 +282,16 @@ export const SEED_EVENTS: SeedEvent[] = [
     color: "violet",
   },
   {
+    title: "Daily Standup",
+    description: "Fifteen minutes, what moved and what is stuck.",
+    location: "Zoom",
+    inDays: 0,
+    startHour: 9,
+    durationMinutes: 15,
+    color: "amber",
+    recurrence: "FREQ=DAILY",
+  },
+  {
     title: "Design Sync",
     description: "Walk through the onboarding copy and the empty states.",
     location: "Studio",
@@ -400,6 +412,7 @@ export function buildSeedRows(userId: string, now = new Date()) {
       endsAt,
       allDay: event.allDay ?? false,
       color: event.color,
+      recurrence: event.recurrence ?? null,
     };
   });
 

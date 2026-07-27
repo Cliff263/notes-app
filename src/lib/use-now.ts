@@ -39,3 +39,20 @@ function getSnapshot() {
 export function useNow() {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
+
+const neverChanges = () => () => {};
+
+/**
+ * False while rendering on the server and through hydration, true afterwards.
+ *
+ * For output that is precise enough to differ between the two — a marker
+ * positioned at the current minute, say — where rendering it on the server
+ * guarantees a mismatch the client then refuses to patch up.
+ */
+export function useMounted() {
+  return useSyncExternalStore(
+    neverChanges,
+    () => true,
+    () => false,
+  );
+}

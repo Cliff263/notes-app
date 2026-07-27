@@ -62,6 +62,50 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+/*
+ * Reminders. The payload is JSON from `lib/push.ts`; a push with no body still
+ * shows something rather than nothing, because a silent push is a permission a
+ * browser will eventually withdraw.
+ */
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = { title: "Square Notes", body: event.data ? event.data.text() : "" };
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title || "Square Notes", {
+      body: payload.body || "",
+      // The tag is what collapses a repeat of the same reminder.
+      tag: payload.tag || "square-notes",
+      renotify: false,
+      icon: "/icons/192",
+      badge: "/icons/192",
+      data: { url: payload.url || "/" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/", self.location.origin).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      // Focus a tab that is already open rather than piling up new ones.
+      for (const client of clients) {
+        if (client.url === target && "focus" in client) return client.focus();
+      }
+      if (clients.length && "navigate" in clients[0]) {
+        return clients[0].navigate(target).then((client) => client && client.focus());
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
+});
+
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(DATA_CACHE);
   const cached = await cache.match(request);

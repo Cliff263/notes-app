@@ -31,5 +31,6 @@ export function serializeEvent(row: DbEvent): CalendarEvent {
     color: row.color as EventColor,
     noteId: row.noteId,
     createdAt: row.createdAt.toISOString(),
+    recurrence: row.recurrence,
   };
 }

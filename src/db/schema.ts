@@ -166,6 +166,12 @@ export const events = pgTable(
     noteId: text("noteId").references((): AnyPgColumn => notes.id, {
       onDelete: "set null",
     }),
+    /**
+     * An RRULE subset (`FREQ=WEEKLY;INTERVAL=2`). A repeating event is one row;
+     * its occurrences are worked out when a view asks for a range, which is
+     * also what lets it go into an .ics unchanged.
+     */
+    recurrence: text("recurrence"),
     createdAt: timestamp("createdAt", { mode: "date", withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -234,6 +240,32 @@ export const noteShares = pgTable(
   ],
 );
 
+/**
+ * A browser's push endpoint. One row per device that opted in, keyed by the
+ * endpoint the push service handed out; a subscription that comes back gone is
+ * deleted rather than retried.
+ */
+export const pushSubscriptions = pgTable(
+  "pushSubscription",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: timestamp("createdAt", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** When this device was last told about something, to avoid repeats. */
+    notifiedAt: timestamp("notifiedAt", { mode: "date", withTimezone: true }),
+  },
+  (t) => [uniqueIndex("pushSubscription_endpoint_idx").on(t.endpoint)],
+);
+
 /** Files pasted or dropped into a note, kept in the database as bytes. */
 export const attachments = pgTable(
   "attachment",
@@ -262,5 +294,6 @@ export type DbNote = typeof notes.$inferSelect;
 export type DbEvent = typeof events.$inferSelect;
 export type DbUser = typeof users.$inferSelect;
 export type DbNoteVersion = typeof noteVersions.$inferSelect;
+export type DbPushSubscription = typeof pushSubscriptions.$inferSelect;
 export type DbNoteShare = typeof noteShares.$inferSelect;
 export type DbAttachment = typeof attachments.$inferSelect;

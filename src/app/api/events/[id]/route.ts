@@ -1,8 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { events } from "@/db/schema";
+import { normaliseRecurrence } from "@/lib/recurrence";
 import { serializeEvent } from "@/lib/serialize";
 import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
+
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,6 +20,10 @@ export async function PATCH(request: Request, { params }: Params) {
     if (typeof body.location === "string") patch.location = body.location;
     if (typeof body.color === "string") patch.color = body.color;
     if (typeof body.allDay === "boolean") patch.allDay = body.allDay;
+    // An explicit null is how a repeating event is made one-off again.
+    if (body.recurrence !== undefined) {
+      patch.recurrence = normaliseRecurrence(body.recurrence);
+    }
 
     for (const key of ["startsAt", "endsAt"] as const) {
       if (body[key]) {

@@ -1,9 +1,15 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, Trash2, X } from "lucide-react";
+import { Loader2, Repeat, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { EVENT_COLORS, type CalendarEvent, type EventColor } from "@/lib/types";
+import {
+  describeRecurrence,
+  formatRecurrence,
+  parseRecurrence,
+  type Recurrence,
+} from "@/lib/recurrence";
 import { cn, EVENT_COLOR_VALUES, toLocalInputValue } from "@/lib/utils";
 import { useEventActions, type EventDraft } from "@/hooks/use-events";
 
@@ -164,6 +170,11 @@ function EventForm({
           All day
         </label>
 
+        <RepeatPicker
+          value={draft.recurrence}
+          onChange={(recurrence) => patch({ recurrence })}
+        />
+
         <input
           value={draft.location}
           onChange={(event) => patch({ location: event.target.value })}
@@ -249,6 +260,129 @@ function EventForm({
   );
 }
 
+/**
+ * Repeats, offered as the four rules the app can actually expand. "Custom"
+ * exposes the interval and an end condition; anything more elaborate belongs in
+ * a calendar app, not a notes app.
+ */
+function RepeatPicker({
+  value,
+  onChange,
+}: {
+  value: string | null | undefined;
+  onChange: (next: string | null) => void;
+}) {
+  const rule = parseRecurrence(value);
+  const [open, setOpen] = useState(Boolean(rule && rule.interval > 1));
+
+  const presets: Array<{ label: string; rule: string | null }> = [
+    { label: "Never", rule: null },
+    { label: "Daily", rule: "FREQ=DAILY" },
+    { label: "Weekly", rule: "FREQ=WEEKLY" },
+    { label: "Monthly", rule: "FREQ=MONTHLY" },
+    { label: "Yearly", rule: "FREQ=YEARLY" },
+  ];
+
+  const update = (patch: Partial<Recurrence>) => {
+    const base: Recurrence = rule ?? {
+      freq: "WEEKLY",
+      interval: 1,
+      until: null,
+      count: null,
+    };
+    onChange(formatRecurrence({ ...base, ...patch }));
+  };
+
+  return (
+    <div className="rounded-lg border border-line p-2.5">
+      <div className="flex items-center gap-2">
+        <Repeat className="size-3.5 text-muted-2" />
+        <span className="flex-1 text-[11px] text-muted-2">Repeats</span>
+        {rule && (
+          <button
+            type="button"
+            onClick={() => setOpen((current) => !current)}
+            className="text-[11px] text-muted transition hover:text-foreground"
+          >
+            {open ? "Hide options" : "Options"}
+          </button>
+        )}
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {presets.map((preset) => {
+          const active = preset.rule
+            ? rule?.freq === parseRecurrence(preset.rule)?.freq
+            : !rule;
+
+          return (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() =>
+                preset.rule ? update({ freq: parseRecurrence(preset.rule)!.freq }) : onChange(null)
+              }
+              className={cn(
+                "rounded-md border px-2 py-1 text-[11px] transition",
+                active
+                  ? "border-transparent bg-btn text-btn-foreground"
+                  : "border-line text-muted hover:text-foreground",
+              )}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {rule && open && (
+        <div className="mt-2.5 space-y-2 border-t border-line pt-2.5">
+          <label className="flex items-center gap-2 text-[11px] text-muted-2">
+            Every
+            <input
+              type="number"
+              min={1}
+              max={99}
+              value={rule.interval}
+              onChange={(event) =>
+                update({ interval: Math.max(1, Number(event.target.value) || 1) })
+              }
+              className="h-7 w-14 rounded-md border border-line field-sm bg-input px-2 text-foreground"
+            />
+            {{ DAILY: "days", WEEKLY: "weeks", MONTHLY: "months", YEARLY: "years" }[rule.freq]}
+          </label>
+
+          <label className="flex items-center gap-2 text-[11px] text-muted-2">
+            Until
+            <input
+              type="date"
+              value={rule.until ? toLocalInputValue(rule.until).slice(0, 10) : ""}
+              onChange={(event) =>
+                update({
+                  until: event.target.value ? new Date(`${event.target.value}T23:59`) : null,
+                  count: null,
+                })
+              }
+              className="h-7 rounded-md border border-line field-sm bg-input px-2 text-foreground"
+            />
+            {rule.until && (
+              <button
+                type="button"
+                onClick={() => update({ until: null })}
+                className="text-muted-2 transition hover:text-foreground"
+              >
+                clear
+              </button>
+            )}
+          </label>
+
+          <p className="text-[11px] text-muted-2">{describeRecurrence(rule)}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function initialDraft(
   state: Exclude<EventModalState, { mode: "closed" }>,
 ): EventDraft {
@@ -262,6 +396,7 @@ function initialDraft(
       endsAt: toLocalInputValue(event.endsAt),
       allDay: event.allDay,
       color: event.color,
+      recurrence: event.recurrence,
     };
   }
 
@@ -278,5 +413,6 @@ function initialDraft(
     endsAt: toLocalInputValue(end),
     allDay: false,
     color: "violet" satisfies EventColor,
+    recurrence: null,
   };
 }

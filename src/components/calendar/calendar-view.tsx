@@ -12,12 +12,24 @@ import {
   timeLabel,
 } from "@/lib/utils";
 import { useBreakpoint } from "@/lib/use-media-query";
-import { dayKey, eventsByDay } from "@/lib/calendar";
+import { useNow } from "@/lib/use-now";
+import {
+  CALENDAR_VIEWS,
+  dayKey,
+  eventsByDay,
+  rangeFor,
+  stepCursor,
+  type CalendarViewKind,
+} from "@/lib/calendar";
+import { AgendaView } from "./agenda-view";
+import { TimeGrid, TimeGridHeader } from "./time-grid";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function CalendarView({
   events,
+  view,
+  onViewChange,
   cursor,
   onCursorChange,
   selectedDay,
@@ -25,7 +37,10 @@ export function CalendarView({
   onCreateOn,
   onOpenEvent,
 }: {
+  /** Already expanded for the visible range — occurrences, not stored rows. */
   events: CalendarEvent[];
+  view: CalendarViewKind;
+  onViewChange: (next: CalendarViewKind) => void;
   cursor: Date;
   onCursorChange: (next: Date) => void;
   selectedDay: Date;
@@ -34,10 +49,11 @@ export function CalendarView({
   onOpenEvent: (event: CalendarEvent) => void;
 }) {
   const [direction, setDirection] = useState<1 | -1>(1);
-  const today = new Date();
+  const today = new Date(useNow());
   // Phones get a dot grid; the day's detail lives in the panel underneath.
   const { isPhone: compact } = useBreakpoint();
 
+  const range = useMemo(() => rangeFor(view, cursor), [view, cursor]);
   const cells = useMemo(
     () => monthGrid(cursor.getFullYear(), cursor.getMonth()),
     [cursor],
@@ -46,25 +62,17 @@ export function CalendarView({
 
   function move(step: 1 | -1) {
     setDirection(step);
-    const next = new Date(cursor);
-    next.setMonth(next.getMonth() + step, 1);
-    onCursorChange(next);
+    onCursorChange(stepCursor(view, cursor, step));
   }
 
   function goToday() {
     const now = new Date();
     setDirection(now > cursor ? 1 : -1);
-    onCursorChange(new Date(now.getFullYear(), now.getMonth(), 1));
+    onCursorChange(now);
     onSelectDay(now);
   }
 
-  const monthEventCount = events.filter((event) => {
-    const date = new Date(event.startsAt);
-    return (
-      date.getMonth() === cursor.getMonth() &&
-      date.getFullYear() === cursor.getFullYear()
-    );
-  }).length;
+  const inRangeCount = events.length;
 
   const todayCount = events.filter((event) =>
     isSameDay(new Date(event.startsAt), today),
@@ -77,6 +85,13 @@ export function CalendarView({
     return date >= today && date <= weekAhead;
   }).length;
 
+  const rangeLabel = {
+    month: "this month",
+    week: "this week",
+    day: "today",
+    agenda: "coming up",
+  }[view];
+
   return (
     <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-surface max-lg:min-h-[70vh] lg:h-full">
       <div className="pointer-events-none absolute inset-0 aurora opacity-60" />
@@ -85,22 +100,51 @@ export function CalendarView({
       <header className="relative flex flex-col gap-3 border-b border-line px-4 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
         <div className="min-w-0 sm:flex-1">
           <h1 className="glow-text text-[20px] font-semibold tracking-tight sm:text-[22px]">
-            {cursor.toLocaleDateString("en-US", { month: "long" })}{" "}
-            {cursor.getFullYear()}
+            {range.title}
           </h1>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <Chip
-              label={`${monthEventCount} this month`}
-              tone={monthEventCount ? "var(--glow-1)" : undefined}
+              label={`${inRangeCount} ${rangeLabel}`}
+              tone={inRangeCount ? "var(--glow-1)" : undefined}
             />
-            <Chip label={`${todayCount} today`} tone={todayCount ? "var(--glow-2)" : undefined} />
+            {/* On the day view this would just repeat the chip beside it. */}
+            {view !== "day" && (
+              <Chip
+                label={`${todayCount} today`}
+                tone={todayCount ? "var(--glow-2)" : undefined}
+              />
+            )}
             <Chip label={`${weekCount} next 7 days`} />
           </div>
         </div>
 
+        {/* The view switcher, with the active tab carrying a shared highlight. */}
+        <div className="flex items-center gap-0.5 rounded-lg border border-line p-0.5 max-sm:order-2">
+          {CALENDAR_VIEWS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onViewChange(option)}
+              className={cn(
+                "relative rounded-md px-2.5 py-1 text-[11px] capitalize transition",
+                view === option ? "text-foreground" : "text-muted-2 hover:text-foreground",
+              )}
+            >
+              {view === option && (
+                <motion.span
+                  layoutId="calendar-view-tab"
+                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  className="absolute inset-0 rounded-md bg-card"
+                />
+              )}
+              <span className="relative">{option}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center gap-1 max-sm:order-3">
-          <NavButton label="Previous month" onClick={() => move(-1)}>
+          <NavButton label="Previous" onClick={() => move(-1)}>
             <ChevronLeft className="size-4" />
           </NavButton>
           <button
@@ -110,7 +154,7 @@ export function CalendarView({
           >
             Today
           </button>
-          <NavButton label="Next month" onClick={() => move(1)}>
+          <NavButton label="Next" onClick={() => move(1)}>
             <ChevronRight className="size-4" />
           </NavButton>
         </div>
@@ -125,28 +169,59 @@ export function CalendarView({
         </button>
       </header>
 
-      <div className="relative grid grid-cols-7 border-b border-line px-3 py-2">
-        {WEEKDAYS.map((day) => (
-          <span
-            key={day}
-            className="text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-2"
-          >
-            {day}
-          </span>
-        ))}
-      </div>
+      {view === "month" && (
+        <div className="relative grid grid-cols-7 border-b border-line px-3 py-2">
+          {WEEKDAYS.map((day) => (
+            <span
+              key={day}
+              className="text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-2"
+            >
+              {day}
+            </span>
+          ))}
+        </div>
+      )}
 
-      <div className="relative min-h-0 flex-1 overflow-hidden p-2 sm:p-3">
+      {view === "week" && (
+        <TimeGridHeader
+          days={range.days}
+          selectedDay={selectedDay}
+          onSelectDay={onSelectDay}
+        />
+      )}
+
+      {/*
+       * Every view slides in from the direction it was reached from, so moving
+       * forward and back through time reads as movement rather than a swap.
+       */}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <AnimatePresence mode="wait" initial={false} custom={direction}>
           <motion.div
-            key={`${cursor.getFullYear()}-${cursor.getMonth()}`}
+            key={`${view}-${range.from.toISOString()}`}
             custom={direction}
             initial={{ opacity: 0, x: direction * 24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: direction * -24 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="grid h-full grid-cols-7 grid-rows-6 gap-1.5"
+            className="flex min-h-0 flex-1 flex-col"
           >
+            {view === "agenda" && (
+              <AgendaView events={events} onOpenEvent={onOpenEvent} />
+            )}
+
+            {(view === "week" || view === "day") && (
+              <TimeGrid
+                days={range.days}
+                events={events}
+                selectedDay={selectedDay}
+                onSelectDay={onSelectDay}
+                onOpenEvent={onOpenEvent}
+                onCreateOn={onCreateOn}
+              />
+            )}
+
+            {view === "month" && (
+              <div className="grid h-full min-h-0 grid-cols-7 grid-rows-6 gap-1.5 p-2 sm:p-3">
             {cells.map((day, index) => {
               const dayEvents = byDay.get(dayKey(day)) ?? [];
               const inMonth = day.getMonth() === cursor.getMonth();
@@ -262,6 +337,8 @@ export function CalendarView({
                 </motion.button>
               );
             })}
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>

@@ -53,6 +53,13 @@ export type CalendarEvent = {
   /** Set when the event was created from a note. */
   noteId: string | null;
   createdAt: string;
+  /** An RRULE subset — see `lib/recurrence.ts`. Null for a one-off. */
+  recurrence: string | null;
+  /**
+   * On an expanded occurrence, the id of the row it came from. Absent on the
+   * stored event itself, which is its own series.
+   */
+  seriesId?: string;
 };
 
 /** Which slice of the workspace a route is showing. */
