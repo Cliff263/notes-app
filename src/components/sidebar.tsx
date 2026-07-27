@@ -19,7 +19,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { signOut, useSession } from "next-auth/react";
+import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type ComponentType } from "react";
@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { AnimatedNumber, tap } from "@/components/motion";
 import { useNoteActions, useSummary } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
+import { useAuthStore } from "@/store/auth-store";
 
 const CATEGORY_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   Personal: User,
@@ -40,7 +41,7 @@ const CATEGORY_ICONS: Record<string, ComponentType<{ className?: string }>> = {
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { data: session } = useSession();
+  const user = useAuthStore((state) => state.user);
   const [categoriesOpen, setCategoriesOpen] = useState(true);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
@@ -76,7 +77,6 @@ export function Sidebar() {
     }
   }
 
-  const user = session?.user;
   const displayName = user?.name || user?.email?.split("@")[0] || "Signed in";
   const initial = displayName.charAt(0).toUpperCase();
 

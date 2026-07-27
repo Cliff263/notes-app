@@ -1,6 +1,7 @@
 "use client";
 
 import { queueRequest } from "./outbox";
+import { refreshAuthSession } from "@/store/auth-store";
 
 export class ApiError extends Error {
   constructor(
@@ -27,13 +28,27 @@ export async function api<T>(
 
   let response: Response;
   try {
-    response = await fetch(path, {
+    const fetchRequest = () => fetch(path, {
       ...request,
       headers:
         request.body && !(request.body instanceof FormData)
           ? { "Content-Type": "application/json", ...request.headers }
           : request.headers,
     });
+    response = await fetchRequest();
+
+    // A sleeping tab can hold an older client session even though Auth.js can
+    // still refresh its cookie. Revalidate once and retry the original request.
+    if (response.status === 401) {
+      try {
+        const session = await refreshAuthSession();
+        if (session) response = await fetchRequest();
+      } catch {
+        // Preserve the original 401 if session revalidation itself is
+        // unavailable; React Query can surface it without misclassifying it as
+        // an offline write.
+      }
+    }
   } catch (error) {
     if (queueWhenOffline && typeof request.body === "string") {
       queueRequest(path, method, request.body);

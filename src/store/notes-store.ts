@@ -32,6 +32,7 @@ type NotesState = {
   setSelectedIds: (ids: Set<string>) => void;
   clearSelection: () => void;
   setSelectMode: (enabled: boolean) => void;
+  reset: () => void;
 };
 
 export type BulkAction =
@@ -75,4 +76,15 @@ export const useNotesStore = create<NotesState>((set) => ({
   clearSelection: () => set({ selectedIds: new Set(), selectMode: false }),
   setSelectMode: (selectMode) =>
     set(selectMode ? { selectMode } : { selectMode, selectedIds: new Set() }),
+  reset: () =>
+    set({
+      selectedId: null,
+      search: "",
+      sort: "updated",
+      view: "list",
+      sidebarOpen: true,
+      drawerOpen: false,
+      selectMode: false,
+      selectedIds: new Set(),
+    }),
 }));

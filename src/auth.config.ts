@@ -47,8 +47,14 @@ export const authConfig = {
 
       return signedIn;
     },
-    jwt({ token, user }) {
+    jwt({ token, user, trigger, session }) {
       if (user?.id) token.sub = user.id;
+      if (
+        trigger === "update" &&
+        typeof session?.user?.name === "string"
+      ) {
+        token.name = session.user.name.trim().slice(0, 80);
+      }
       return token;
     },
     session({ session, token }) {

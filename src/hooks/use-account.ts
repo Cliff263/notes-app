@@ -1,8 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
+import { useAuthStore } from "@/store/auth-store";
 
 export type Account = {
   name: string | null;
@@ -22,6 +24,7 @@ export function useAccount() {
 
 export function useUpdateAccount() {
   const client = useQueryClient();
+  const { update } = useSession();
 
   return useMutation({
     mutationFn: (name: string) =>
@@ -29,10 +32,13 @@ export function useUpdateAccount() {
         method: "PATCH",
         body: JSON.stringify({ name }),
       }),
-    onSuccess: (_result, name) =>
+    onSuccess: async (_result, name) => {
       client.setQueryData<Account>(queryKeys.account.detail(), (current) =>
         current ? { ...current, name } : current,
-      ),
+      );
+      useAuthStore.getState().setUserName(name);
+      await update({ user: { name } });
+    },
   });
 }
 

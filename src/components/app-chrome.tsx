@@ -1,12 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useNote, useNoteActions } from "@/hooks/use-notes";
 import { ROUTES } from "@/lib/routes";
 import { useNotesStore } from "@/store/notes-store";
+import { useAuthStore } from "@/store/auth-store";
 
 /*
  * The palette and the help sheet are only mounted once they are opened, so
@@ -27,7 +27,7 @@ const OfflineIndicator = dynamic(
 );
 
 export function AppChrome() {
-  const { status } = useSession();
+  const status = useAuthStore((state) => state.status);
   if (status !== "authenticated") return null;
   return <Chrome />;
 }
