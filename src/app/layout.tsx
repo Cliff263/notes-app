@@ -18,10 +18,26 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Square Notes",
+  title: {
+    default: "Nexora",
+    template: "%s · Nexora",
+  },
   description:
-    "A focused note-taking workspace with a futuristic calendar for everything coming up.",
-  appleWebApp: { capable: true, title: "Square Notes", statusBarStyle: "black-translucent" },
+    "Nexora is an intelligent note-taking workspace for capturing ideas, organizing knowledge, and thinking with AI.",
+  applicationName: "Nexora",
+  keywords: ["notes", "knowledge", "productivity", "AI workspace"],
+  openGraph: {
+    title: "Nexora — Ideas, evolved.",
+    description: "Futuristic note-taking for modern minds.",
+    siteName: "Nexora",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Nexora — Ideas, evolved.",
+    description: "Futuristic note-taking for modern minds.",
+  },
+  appleWebApp: { capable: true, title: "Nexora", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {
@@ -37,7 +53,7 @@ export const viewport: Viewport = {
 };
 
 /** Applies the stored theme before paint so there is no light-mode flash. */
-const themeScript = `(function(){try{var t=localStorage.getItem("square-theme")||"dark";document.documentElement.setAttribute("data-theme",t);document.documentElement.style.colorScheme=t;}catch(e){}})();`;
+const themeScript = `(function(){try{var t=localStorage.getItem("nexora-theme")||localStorage.getItem("square-theme")||"dark";document.documentElement.setAttribute("data-theme",t);document.documentElement.style.colorScheme=t;}catch(e){}})();`;
 
 export default function RootLayout({
   children,

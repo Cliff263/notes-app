@@ -10,7 +10,7 @@ import {
 
 type Theme = "dark" | "light";
 
-const STORAGE_KEY = "square-theme";
+const STORAGE_KEY = "nexora-theme";
 
 /**
  * The `data-theme` attribute is the source of truth — an inline script in the

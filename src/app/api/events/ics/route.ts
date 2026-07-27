@@ -23,7 +23,7 @@ export async function GET() {
     return new Response(toIcs(rows.map(serializeEvent)), {
       headers: {
         "Content-Type": "text/calendar; charset=utf-8",
-        "Content-Disposition": `attachment; filename="square-notes-${stamp}.ics"`,
+        "Content-Disposition": `attachment; filename="nexora-${stamp}.ics"`,
         "Cache-Control": "no-store",
       },
     });

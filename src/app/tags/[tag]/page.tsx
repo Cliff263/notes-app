@@ -7,7 +7,7 @@ export async function generateMetadata({
   params: Promise<{ tag: string }>;
 }): Promise<Metadata> {
   const { tag } = await params;
-  return { title: `#${decodeURIComponent(tag)} · Square Notes` };
+  return { title: `#${decodeURIComponent(tag)}` };
 }
 
 export default async function TagPage({

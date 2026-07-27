@@ -23,7 +23,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { category } = await params;
   const resolved = resolveCategory(category);
-  return { title: resolved ? `${resolved} · Square Notes` : "Square Notes" };
+  return resolved ? { title: resolved } : {};
 }
 
 export default async function CategoryPage({

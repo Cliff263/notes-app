@@ -93,7 +93,7 @@ export function useCollab({ token, name, seed, onRemoteText }: Options) {
       const text = doc.getText("content");
       textRef.current = text;
 
-      const provider = new WebrtcProvider(`square-notes-${token}`, doc, {
+      const provider = new WebrtcProvider(`nexora-${token}`, doc, {
         signaling: signalingServers(),
       });
 

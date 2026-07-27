@@ -1,26 +1,69 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { CalendarDays, FileText, Sparkles } from "lucide-react";
-import type { ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { BrainCircuit, FileText, Network, Sparkles } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 
-const HIGHLIGHTS = [
-  {
-    icon: FileText,
-    title: "Three panes, no clutter",
-    body: "Categories on the left, your notes in the middle, a focused editor on the right.",
-  },
-  {
-    icon: CalendarDays,
-    title: "A calendar that looks ahead",
-    body: "Scheduled events and everything upcoming, in one glowing month view.",
-  },
-  {
-    icon: Sparkles,
-    title: "Pin, favorite, find",
-    body: "Search hits titles, content and tags in a single pass.",
-  },
+const PHRASES = [
+  "Futuristic note-taking",
+  "Built for ideas",
+  "Powered by AI",
+  "Knowledge, organized",
+  "Ideas, evolved",
 ];
+
+const CAPABILITIES = [
+  { icon: FileText, label: "Capture", detail: "Write without friction" },
+  { icon: Network, label: "Organize", detail: "Connect what you know" },
+  { icon: BrainCircuit, label: "Evolve", detail: "Think beyond the page" },
+];
+
+function NexoraMark() {
+  return (
+    <span className="relative flex size-9 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/[0.06] shadow-[0_0_24px_rgba(139,92,246,0.12)]">
+      <span className="absolute inset-0 bg-gradient-to-br from-violet-500/20 via-transparent to-cyan-400/20" />
+      <Sparkles className="relative size-[17px] text-violet-200" />
+    </span>
+  );
+}
+
+function PhraseLoop() {
+  const [activePhrase, setActivePhrase] = useState(0);
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (reduceMotion) return;
+
+    const interval = window.setInterval(() => {
+      setActivePhrase((current) => (current + 1) % PHRASES.length);
+    }, 2600);
+
+    return () => window.clearInterval(interval);
+  }, [reduceMotion]);
+
+  return (
+    <>
+      <span className="sr-only">Futuristic note-taking for modern minds.</span>
+      <div
+        className="flex h-7 items-center font-mono text-[11px] uppercase tracking-[0.24em] text-cyan-200/80 sm:text-xs"
+        aria-hidden="true"
+      >
+        <span className="mr-3 h-px w-6 bg-gradient-to-r from-cyan-400 to-violet-400" />
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={PHRASES[activePhrase]}
+            initial={reduceMotion ? false : { opacity: 0, y: 7, filter: "blur(4px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            exit={reduceMotion ? undefined : { opacity: 0, y: -7, filter: "blur(4px)" }}
+            transition={{ duration: 0.32, ease: "easeOut" }}
+          >
+            {PHRASES[activePhrase]}
+          </motion.span>
+        </AnimatePresence>
+      </div>
+    </>
+  );
+}
 
 export function AuthShell({
   title,
@@ -32,85 +75,106 @@ export function AuthShell({
   children: ReactNode;
 }) {
   return (
-    <main className="flex min-h-dvh bg-background">
-      {/* Left: the pitch, only on wide screens */}
-      <div className="relative hidden w-1/2 overflow-hidden border-r border-line lg:block">
-        <div className="absolute inset-0 aurora" />
-        <div className="absolute inset-0 grid-bg opacity-40" />
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: [0, 1, 0] }}
-          transition={{ duration: 4, repeat: Infinity, repeatDelay: 2 }}
-          className="scan-line absolute left-0 right-0 top-1/3 h-px"
-        />
+    <main className="relative min-h-dvh overflow-hidden bg-[#07070a] text-white">
+      <div className="pointer-events-none absolute inset-0 grid-bg opacity-25" />
+      <div className="pointer-events-none absolute -left-40 -top-40 size-[34rem] rounded-full bg-violet-700/15 blur-[130px]" />
+      <div className="pointer-events-none absolute -bottom-52 right-[20%] size-[38rem] rounded-full bg-cyan-500/10 blur-[150px]" />
 
-        <div className="relative flex h-full flex-col justify-between p-12">
-          <div className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-lg border border-line bg-card">
-              <FileText className="size-4" />
+      <div className="relative mx-auto grid min-h-dvh w-full max-w-[1600px] lg:grid-cols-[minmax(0,1.15fr)_minmax(430px,0.85fr)]">
+        <section className="relative flex min-h-[390px] flex-col overflow-hidden border-white/10 px-6 pb-10 pt-6 sm:px-10 sm:pt-8 lg:min-h-dvh lg:border-r lg:px-14 lg:pb-12 lg:pt-10 xl:px-20">
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45 }}
+            className="flex items-center gap-3"
+          >
+            <NexoraMark />
+            <span className="text-base font-semibold tracking-[-0.02em]">Nexora</span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.18em] text-white/45">
+              Intelligent workspace
             </span>
-            <span className="text-[15px] font-semibold tracking-tight">Square Notes</span>
-          </div>
+          </motion.div>
 
-          <div>
-            <motion.h2
+          <div className="my-auto max-w-3xl py-12 sm:py-16 lg:py-20">
+            <PhraseLoop />
+
+            <motion.h1
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.55, delay: 0.08, ease: "easeOut" }}
+              className="mt-5 max-w-[760px] text-[clamp(3.25rem,8vw,7.5rem)] font-semibold leading-[0.88] tracking-[-0.075em]"
+            >
+              Ideas,
+              <span className="block bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-300 bg-clip-text pb-2 text-transparent">
+                evolved.
+              </span>
+            </motion.h1>
+
+            <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="glow-text max-w-[420px] text-[40px] font-semibold leading-[1.1] tracking-tight"
+              transition={{ duration: 0.5, delay: 0.18 }}
+              className="mt-6 max-w-xl"
             >
-              Everything you meant to write down.
-            </motion.h2>
+              <p className="text-lg font-medium tracking-[-0.02em] text-white/90 sm:text-xl">
+                Futuristic note-taking for modern minds.
+              </p>
+              <p className="mt-2 max-w-lg text-sm leading-6 text-white/48 sm:text-[15px]">
+                Capture ideas, organize knowledge, and think with AI in one intelligent
+                workspace.
+              </p>
+            </motion.div>
+          </div>
 
-            <div className="mt-10 space-y-5">
-              {HIGHLIGHTS.map((item, index) => (
-                <motion.div
-                  key={item.title}
-                  initial={{ opacity: 0, x: -12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.4, delay: 0.15 + index * 0.1 }}
-                  className="flex gap-3"
-                >
-                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-line bg-card/60 backdrop-blur">
-                    <item.icon className="size-4 text-muted" />
-                  </span>
-                  <span className="max-w-[320px]">
-                    <span className="block text-[13px] font-medium">{item.title}</span>
-                    <span className="block text-[12px] leading-relaxed text-muted-2">
-                      {item.body}
-                    </span>
-                  </span>
-                </motion.div>
-              ))}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.32 }}
+            className="hidden grid-cols-3 gap-3 sm:grid"
+          >
+            {CAPABILITIES.map((item) => (
+              <div
+                key={item.label}
+                className="group rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 backdrop-blur-sm transition-colors hover:border-violet-400/20 hover:bg-white/[0.045]"
+              >
+                <item.icon className="size-4 text-violet-300/80 transition-colors group-hover:text-cyan-200" />
+                <p className="mt-5 text-xs font-medium text-white/85">{item.label}</p>
+                <p className="mt-1 text-[11px] text-white/35">{item.detail}</p>
+              </div>
+            ))}
+          </motion.div>
+        </section>
+
+        <section className="relative flex items-center justify-center border-t border-white/10 px-5 py-12 sm:px-8 lg:min-h-dvh lg:border-t-0 lg:px-12">
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-violet-500/[0.025] to-transparent" />
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.99 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.45, delay: 0.12, ease: "easeOut" }}
+            className="relative w-full max-w-[420px] rounded-[28px] border border-white/[0.09] bg-[#0d0d12]/80 p-6 shadow-[0_24px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-8"
+          >
+            <div className="mb-8 flex items-center justify-between">
+              <div>
+                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-violet-300/65">
+                  Enter Nexora
+                </p>
+                <h2 className="mt-2 text-[27px] font-semibold tracking-[-0.04em]">
+                  {title}
+                </h2>
+                <p className="mt-1.5 max-w-xs text-[13px] leading-5 text-white/45">
+                  {subtitle}
+                </p>
+              </div>
+              <span className="hidden size-2 rounded-full bg-emerald-300 shadow-[0_0_14px_rgba(110,231,183,0.8)] sm:block" />
             </div>
-          </div>
 
-          <p className="text-[11px] text-muted-2">
-            Built with Next.js, Neon and a fondness for dark interfaces.
-          </p>
-        </div>
-      </div>
+            {children}
 
-      {/* Right: the form */}
-      <div className="flex w-full items-center justify-center px-6 py-12 lg:w-1/2">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, ease: "easeOut" }}
-          className="w-full max-w-[380px]"
-        >
-          <div className="mb-8 flex items-center gap-2 lg:hidden">
-            <span className="flex size-8 items-center justify-center rounded-lg border border-line bg-card">
-              <FileText className="size-4" />
-            </span>
-            <span className="text-[15px] font-semibold tracking-tight">Square Notes</span>
-          </div>
-
-          <h1 className="text-[26px] font-semibold tracking-tight">{title}</h1>
-          <p className="mt-1.5 text-[13px] text-muted">{subtitle}</p>
-
-          <div className="mt-8">{children}</div>
-        </motion.div>
+            <p className="mt-7 text-center font-mono text-[9px] uppercase tracking-[0.18em] text-white/20">
+              Your thoughts. Your space. Your next idea.
+            </p>
+          </motion.div>
+        </section>
       </div>
     </main>
   );

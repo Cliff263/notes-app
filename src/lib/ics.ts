@@ -58,11 +58,11 @@ function allDayStamp(date: Date) {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
 }
 
-export function toIcs(events: CalendarEvent[], calendarName = "Square Notes") {
+export function toIcs(events: CalendarEvent[], calendarName = "Nexora") {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Square Notes//EN",
+    "PRODID:-//Nexora//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     `X-WR-CALNAME:${escapeText(calendarName)}`,
@@ -73,7 +73,7 @@ export function toIcs(events: CalendarEvent[], calendarName = "Square Notes") {
     const end = new Date(event.endsAt);
 
     lines.push("BEGIN:VEVENT");
-    lines.push(`UID:${event.id}@square-notes`);
+    lines.push(`UID:${event.id}@nexora`);
     lines.push(`DTSTAMP:${toIcsDate(new Date(event.createdAt))}`);
 
     if (event.allDay) {

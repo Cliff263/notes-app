@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   if (!found) return { title: "Note not found", robots: { index: false } };
 
   return {
-    title: `${found.note.title || "Untitled note"} · Square Notes`,
+    title: found.note.title || "Untitled note",
     description: stripMarkdown(found.note.content).slice(0, 160),
     // A capability URL should not end up in a search index.
     robots: { index: false, follow: false },
@@ -80,7 +80,7 @@ export default async function SharedNotePage({ params }: Params) {
       <footer className="border-t border-line pt-5 text-[11px] leading-relaxed text-muted-2">
         Shared from{" "}
         <Link href="/" className="text-glow-2 underline underline-offset-2">
-          Square Notes
+          Nexora
         </Link>
         . The owner can withdraw this link at any time.
         {found.share.allowEdit &&

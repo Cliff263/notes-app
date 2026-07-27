@@ -99,7 +99,7 @@ export function Sidebar() {
         <span className="flex size-7 items-center justify-center rounded-md border border-line bg-card">
           <FileText className="size-3.5 text-foreground" />
         </span>
-        <span className="text-[13px] font-semibold tracking-tight">Square Notes</span>
+        <span className="text-[13px] font-semibold tracking-tight">Nexora</span>
       </Link>
 
       <div className="px-3 pb-3">

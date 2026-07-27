@@ -2,10 +2,10 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Square Notes",
-    short_name: "Notes",
+    name: "Nexora",
+    short_name: "Nexora",
     description:
-      "A focused note-taking workspace with a futuristic calendar for everything coming up.",
+      "An intelligent note-taking workspace for capturing ideas, organizing knowledge, and thinking with AI.",
     start_url: "/",
     scope: "/",
     display: "standalone",

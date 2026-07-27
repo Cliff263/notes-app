@@ -1,5 +1,5 @@
 /*
- * Square Notes service worker.
+ * Nexora service worker.
  *
  * Navigations are network-first so a signed-out visitor is always redirected
  * correctly; the app shell falls back to cache when the network is gone.
@@ -7,7 +7,7 @@
  * workspace readable offline.
  */
 
-const VERSION = "square-notes-v1";
+const VERSION = "nexora-v1";
 const SHELL_CACHE = `${VERSION}-shell`;
 const DATA_CACHE = `${VERSION}-data`;
 
@@ -72,14 +72,14 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data ? event.data.json() : {};
   } catch {
-    payload = { title: "Square Notes", body: event.data ? event.data.text() : "" };
+    payload = { title: "Nexora", body: event.data ? event.data.text() : "" };
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || "Square Notes", {
+    self.registration.showNotification(payload.title || "Nexora", {
       body: payload.body || "",
       // The tag is what collapses a repeat of the same reminder.
-      tag: payload.tag || "square-notes",
+      tag: payload.tag || "nexora",
       renotify: false,
       icon: "/icons/192",
       badge: "/icons/192",

@@ -333,7 +333,7 @@ export default function SettingsPage() {
           <Card title="Install" delay={0.17}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[13px]">Install Square Notes</p>
+                <p className="text-[13px]">Install Nexora</p>
                 <p className="mt-0.5 text-[11px] text-muted-2">
                   {installPrompt
                     ? "Adds it to your home screen or dock, opening without browser chrome."

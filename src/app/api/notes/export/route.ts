@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     const { body, mime } = await buildExport(
       included,
       requested,
-      "Square Notes export",
+      "Nexora export",
       images,
     );
     const stamp = new Date().toISOString().slice(0, 10);
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     return new Response(body as BodyInit, {
       headers: {
         "Content-Type": mime,
-        "Content-Disposition": `attachment; filename="square-notes-${stamp}.${requested}"`,
+        "Content-Disposition": `attachment; filename="nexora-${stamp}.${requested}"`,
         "Cache-Control": "no-store",
       },
     });

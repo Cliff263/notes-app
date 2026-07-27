@@ -1,4 +1,4 @@
-# Square Notes
+# Nexora
 
 A note-taking workspace with a three-pane layout — categories and tags on the left,
 note cards in the middle, a live editor on the right — plus a calendar page that shows
@@ -199,7 +199,7 @@ calendar's UID would mean trusting its idea of identity.
 
 **Reminders**
 
-Opt in per device from Settings and Square Notes will notify you shortly before
+Opt in per device from Settings and Nexora will notify you shortly before
 an event starts and when a note falls due. It needs three things: VAPID keys on
 the deployment, a browser that supports push, and your permission — the toggle
 says which one is missing rather than just refusing.
