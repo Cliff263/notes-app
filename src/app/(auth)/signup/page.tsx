@@ -9,7 +9,7 @@ export default function SignupPage() {
   return (
     <AuthShell
       title="Create your workspace"
-      subtitle="Your account starts with a set of notes and a calendar already filled in."
+      subtitle="Start with a clean workspace and make it your own."
     >
       <AuthForm mode="signup" googleEnabled={googleEnabled} />
     </AuthShell>

@@ -1,5 +1,7 @@
 import type { EventColor } from "@/lib/types";
 
+/** Test-only workspace data. Production accounts always start empty. */
+
 type SeedNote = {
   title: string;
   content: string;

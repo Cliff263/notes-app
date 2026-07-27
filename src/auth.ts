@@ -6,7 +6,6 @@ import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "./auth.config";
 import { db } from "./db/client";
 import { accounts, sessions, users, verificationTokens } from "./db/schema";
-import { seedWorkspace } from "./db/seed-user";
 import { clientIp, LIMITS, rateLimit } from "./lib/rate-limit";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -60,10 +59,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  events: {
-    /** Google sign-ups land here; credentials sign-ups seed in the signup route. */
-    async createUser({ user }) {
-      if (user.id) await seedWorkspace(user.id);
-    },
-  },
 });

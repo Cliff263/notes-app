@@ -2,7 +2,7 @@ import { config } from "dotenv";
 import { hash } from "bcryptjs";
 import { Client } from "pg";
 import { configureDatabaseNetworking } from "../src/db/network";
-import { buildSeedRows } from "../src/db/seed-data";
+import { buildSeedRows } from "./fixtures";
 
 config({ path: ".env.local" });
 configureDatabaseNetworking();
@@ -14,9 +14,8 @@ export const TEST_USER = {
 };
 
 /**
- * Every run starts from the same workspace: the account is created once, then
- * its notes and events are rebuilt from the same seed the app ships. Without
- * this, one spec's bulk action changes what the next spec sees.
+ * Every run starts from the same test-only workspace. Without this, one spec's
+ * bulk action changes what the next spec sees.
  */
 export default async function globalSetup() {
   const connectionString =

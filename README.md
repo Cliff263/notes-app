@@ -214,7 +214,7 @@ deleted rather than retried.
 **Account**
 
 - Email/password sign-up, or Google if you configure it
-- A new account is seeded with a full set of notes and events, so it never opens empty
+- A new account starts with a clean workspace, ready for its first note or event
 - `/settings` for your display name, theme, default layout and account deletion
 
 ## Setup
@@ -333,7 +333,7 @@ npm test        # unit: markdown parsing, rate limiting, formatting, exports
 npm run test:e2e  # end to end, against a running app and a real database
 ```
 
-The end-to-end suite rebuilds its own account and seed data before each run, so
+The end-to-end suite rebuilds its own account and test fixtures before each run, so
 runs cannot contaminate each other. It signs in once and reuses the session.
 Point it at an already-running server with `E2E_BASE_URL`, and at a
 pre-installed browser with `PLAYWRIGHT_CHROMIUM_PATH`.
@@ -362,7 +362,7 @@ src/
     notes/                        Note cards, list pane, editor
     sidebar.tsx                   Shared navigation
     workspace.tsx                 The three-pane shell each note route renders
-  db/                             Drizzle schema, client, seed data
+  db/                             Drizzle schema and database client
   store/                          Zustand stores for notes and events
   lib/                            Types, routes, formatting, export builders, session guard
   auth.ts, auth.config.ts         Auth.js configuration

@@ -2,7 +2,6 @@ import { hash } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { assertDbConfigured, db } from "@/db/client";
 import { users } from "@/db/schema";
-import { seedWorkspace } from "@/db/seed-user";
 import { appUrl, issueToken } from "@/lib/auth-tokens";
 import { sendEmail, verifyEmailEmail } from "@/lib/email";
 import { clientIp, LIMITS, rateLimit, tooManyRequests } from "@/lib/rate-limit";
@@ -61,8 +60,6 @@ export async function POST(request: Request) {
       passwordHash,
     })
     .returning({ id: users.id });
-
-  await seedWorkspace(created.id);
 
   // Confirming the address is what makes a future password reset trustworthy.
   const token = await issueToken(created.id, "verify");
