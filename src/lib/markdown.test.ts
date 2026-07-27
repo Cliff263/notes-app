@@ -94,6 +94,31 @@ describe("parseInline", () => {
     expect(nodes.map((n) => n.type)).toEqual(["wikilink", "text", "link"]);
   });
 
+  it("reads an image, and does not read it as a link", () => {
+    const nodes = parseInline("before ![a shot](/api/attachments/abc) after");
+
+    expect(nodes.map((n) => n.type)).toEqual(["text", "image", "text"]);
+    expect(nodes[1]).toEqual({
+      type: "image",
+      value: "a shot",
+      src: "/api/attachments/abc",
+    });
+  });
+
+  it("allows an image with no alt text", () => {
+    expect(parseInline("![](/api/attachments/abc)")[0]).toEqual({
+      type: "image",
+      value: "",
+      src: "/api/attachments/abc",
+    });
+  });
+
+  it("names an image when flattened, since it has no text of its own", () => {
+    expect(inlineToText(parseInline("see ![the chart](/api/attachments/x)"))).toBe(
+      "see [image: the chart]",
+    );
+  });
+
   it("flattens a wiki link to the text it displays", () => {
     expect(inlineToText(parseInline("go to [[Notes|these ones]]"))).toBe(
       "go to these ones",

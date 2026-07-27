@@ -16,6 +16,11 @@ type PreviewProps = {
   resolveLink?: (title: string) => WikiLinkTarget;
   onOpenNote?: (id: string) => void;
   onCreateNote?: (title: string) => void;
+  /**
+   * On a publicly shared note the reader has no session, so the token is what
+   * entitles them to the images the note embeds.
+   */
+  shareToken?: string;
 };
 
 /** Renders the shared markdown blocks. No HTML from the note is ever injected. */
@@ -25,9 +30,10 @@ export function MarkdownPreview({
   resolveLink,
   onOpenNote,
   onCreateNote,
+  shareToken,
 }: PreviewProps) {
   const blocks = parseMarkdown(source);
-  const inline = { resolveLink, onOpenNote, onCreateNote };
+  const inline = { resolveLink, onOpenNote, onCreateNote, shareToken };
 
   if (!blocks.length) {
     return <p className="text-[13px] text-muted-2">Nothing to preview yet.</p>;
@@ -171,12 +177,19 @@ function InlineRun({
   resolveLink,
   onOpenNote,
   onCreateNote,
+  shareToken,
 }: {
   content: Inline[];
   resolveLink?: (title: string) => WikiLinkTarget;
   onOpenNote?: (id: string) => void;
   onCreateNote?: (title: string) => void;
+  shareToken?: string;
 }) {
+  const withToken = (src: string) =>
+    shareToken && src.startsWith("/api/attachments/")
+      ? `${src}?token=${encodeURIComponent(shareToken)}`
+      : src;
+
   return (
     <>
       {content.map((node, index) => {
@@ -193,6 +206,20 @@ function InlineRun({
               >
                 {node.value}
               </code>
+            );
+          case "image":
+            return (
+              /* Attachments are arbitrary user bytes served from our own route:
+                 the image optimizer has nothing to add, and would need the file
+                 to be addressable as a static asset, which it is not. */
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={index}
+                src={withToken(node.src)}
+                alt={node.value}
+                loading="lazy"
+                className="my-2 block max-h-[420px] w-auto max-w-full rounded-lg border border-line"
+              />
             );
           case "wikilink": {
             const target = resolveLink?.(node.target);
@@ -228,7 +255,7 @@ function InlineRun({
             return (
               <a
                 key={index}
-                href={node.href}
+                href={withToken(node.href)}
                 target="_blank"
                 rel="noreferrer noopener"
                 className="text-glow-2 underline underline-offset-2"

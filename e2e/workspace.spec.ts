@@ -235,6 +235,112 @@ test.describe("links between notes", () => {
   });
 });
 
+test.describe("version history", () => {
+  test("an edit is kept, shown as a diff, and can be restored", async ({ page }) => {
+    await openNote(page, "Daily Reflection - January 15");
+
+    const editor = page.locator('textarea[placeholder^="Start writing"]');
+    const original = await editor.inputValue();
+
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" && response.url().includes("/api/notes/"),
+    );
+    await editor.fill(`${original}\n\nA line that was not there before.`);
+    await saved;
+
+    await page.getByLabel("More actions").click();
+    await page.getByRole("button", { name: "Version history" }).click();
+
+    // The diff is against the note as it stands, so the new line reads as added.
+    await expect(page.getByText("Compared with the note as it is now")).toBeVisible();
+    await expect(
+      page.getByText("A line that was not there before.", { exact: false }).first(),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Restore this version" }).click();
+    await expect(editor).toHaveValue(original);
+  });
+});
+
+test.describe("sharing", () => {
+  test("a link opens the note signed out, and revoking closes it", async ({
+    page,
+    browser,
+  }) => {
+    await openNote(page, "Book Notes: Atomic Habits");
+
+    await page.getByLabel("More actions").click();
+    await page.getByRole("button", { name: "Share a link" }).click();
+    await page.getByRole("button", { name: "Create link" }).click();
+
+    const field = page.locator("[data-share-url]");
+    await expect(field).toBeVisible();
+    const url = await field.inputValue();
+    expect(url).toContain("/s/");
+
+    // A brand new context: no cookies, no session, nothing but the link.
+    const stranger = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const guest = await stranger.newPage();
+
+    await guest.goto(url);
+    await expect(guest.getByRole("heading", { name: "Book Notes: Atomic Habits" })).toBeVisible();
+    await expect(guest.getByText("Shared note")).toBeVisible();
+    // Read-only: the editor never reaches a reader.
+    await expect(guest.locator("textarea")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Stop sharing" }).click();
+    await expect(page.getByRole("button", { name: "Create link" })).toBeVisible();
+
+    const afterRevoke = await guest.goto(url);
+    expect(afterRevoke?.status()).toBe(404);
+
+    await stranger.close();
+  });
+});
+
+test.describe("attachments", () => {
+  /** A 1×1 PNG, so the upload is a real image without a fixture on disk. */
+  const pixel = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+
+  test("an uploaded image lands in the note and is served back", async ({ page }) => {
+    await openNote(page, "Weekend Trip Ideas");
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "pixel.png",
+      mimeType: "image/png",
+      buffer: pixel,
+    });
+
+    const editor = page.locator('textarea[placeholder^="Start writing"]');
+    await expect(editor).toHaveValue(/!\[pixel\.png\]\(\/api\/attachments\/[\w-]+\)/);
+
+    await page.getByRole("button", { name: "preview" }).click();
+    const image = page.locator('img[alt="pixel.png"]');
+    await expect(image).toBeVisible();
+
+    const src = await image.getAttribute("src");
+    const served = await page.request.get(src!);
+    expect(served.status()).toBe(200);
+    expect(served.headers()["content-type"]).toBe("image/png");
+  });
+
+  test("a file type that is not on the allowlist is refused", async ({ page }) => {
+    await openNote(page, "Sprint Retrospective");
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "page.html",
+      mimeType: "text/html",
+      buffer: Buffer.from("<script>alert(1)</script>"),
+    });
+
+    await expect(page.getByText(/cannot be attached/)).toBeVisible();
+  });
+});
+
 test.describe("command palette", () => {
   test("opens on the shortcut and finds a note", async ({ page }) => {
     await page.keyboard.press("ControlOrMeta+k");

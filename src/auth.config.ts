@@ -5,7 +5,9 @@ export const googleEnabled = Boolean(
   process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
 );
 
-const PUBLIC_ROUTES = ["/login", "/signup", "/forgot", "/reset", "/verify"];
+// `/s/` is excluded by the proxy matcher too; listed here so that a shared note
+// stays reachable even if that matcher is ever loosened.
+const PUBLIC_ROUTES = ["/login", "/signup", "/forgot", "/reset", "/verify", "/s/"];
 
 /**
  * Edge-safe half of the Auth.js setup: no database adapter and no bcrypt, so it

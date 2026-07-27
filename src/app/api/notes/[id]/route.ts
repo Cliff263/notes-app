@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { notes } from "@/db/schema";
 import { serializeNote } from "@/lib/serialize";
 import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
+import { recordVersion } from "@/lib/versions";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -52,6 +53,15 @@ export async function PATCH(request: Request, { params }: Params) {
       patch.dueAt = due;
     }
 
+    // Read before writing, so there is something to snapshot.
+    const [before] = await db
+      .select()
+      .from(notes)
+      .where(and(eq(notes.id, id), eq(notes.userId, userId)))
+      .limit(1);
+
+    if (!before) return Response.json({ error: "Note not found" }, { status: 404 });
+
     const [row] = await db
       .update(notes)
       .set(patch)
@@ -59,6 +69,14 @@ export async function PATCH(request: Request, { params }: Params) {
       .returning();
 
     if (!row) return Response.json({ error: "Note not found" }, { status: 404 });
+
+    // History is a nicety: losing a snapshot must never lose the edit.
+    try {
+      await recordVersion(before, { title: row.title, content: row.content });
+    } catch (error) {
+      console.error("Could not record a version for note", id, error);
+    }
+
     return Response.json(serializeNote(row));
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorized();

@@ -74,6 +74,20 @@ export const SORT_OPTIONS = [
 
 export type SortKey = (typeof SORT_OPTIONS)[number]["value"];
 
+/**
+ * How long a share link lasts. Lives here rather than beside the sharing code
+ * because the dialog that offers these choices runs in the browser, and
+ * `lib/share.ts` reaches for the database.
+ */
+export const SHARE_DURATIONS = [
+  { value: "forever", label: "No expiry", ms: null },
+  { value: "day", label: "24 hours", ms: 24 * 60 * 60_000 },
+  { value: "week", label: "7 days", ms: 7 * 24 * 60 * 60_000 },
+  { value: "month", label: "30 days", ms: 30 * 24 * 60 * 60_000 },
+] as const;
+
+export type ShareDuration = (typeof SHARE_DURATIONS)[number]["value"];
+
 export const EXPORT_FORMATS = ["pdf", "docx", "md", "txt"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 

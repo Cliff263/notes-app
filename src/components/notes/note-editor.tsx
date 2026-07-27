@@ -18,10 +18,13 @@ import {
   Eye,
   FileText,
   FileType,
+  Globe,
   Hash,
   Hash as HashIcon,
   Heading2,
+  History,
   Italic,
+  Paperclip,
   Link as LinkIcon,
   List as ListIcon,
   ListChecks,
@@ -36,6 +39,8 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
+import { api, ApiError } from "@/lib/api";
+import { ALLOWED_MIME, attachmentMarkdown, isImageMime } from "@/lib/attachments";
 import { continuationFor, toggleTask, wikiLinkQueryAt } from "@/lib/markdown";
 import { ROUTES } from "@/lib/routes";
 import { CATEGORIES, type ExportFormat, type Note } from "@/lib/types";
@@ -60,6 +65,15 @@ const MarkdownPreview = dynamic(
     loading: () => <p className="text-[13px] text-muted-2">Rendering…</p>,
   },
 );
+// Neither of these belongs in the first paint: one carries a diff algorithm,
+// the other is only reached from a menu.
+const HistorySheet = dynamic(
+  () => import("./history-sheet").then((m) => m.HistorySheet),
+  { ssr: false },
+);
+const ShareDialog = dynamic(() => import("./share-dialog").then((m) => m.ShareDialog), {
+  ssr: false,
+});
 import { useNotesStore } from "@/store/notes-store";
 
 export function NoteEditor() {
@@ -145,6 +159,10 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const [exportOpen, setExportOpen] = useState(false);
   const [mode, setMode] = useState<"write" | "preview">("write");
   const [scheduling, setScheduling] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // `[[` link completion: what is being typed, and which suggestion is active.
   const [linkMenu, setLinkMenu] = useState<{ query: string; start: number } | null>(null);
@@ -174,6 +192,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const scheduled = linkedEvents.length > 0;
   const menuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   /** Wraps the selection, or drops the markers in place for typing between. */
   function wrapSelection(before: string, after: string) {
@@ -209,6 +228,51 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
 
     writeContent(`${value.slice(0, lineStart)}${updated}${value.slice(lineEnd)}`);
     requestAnimationFrame(() => field.focus());
+  }
+
+  /**
+   * Uploads a dropped, pasted or chosen file and drops the markdown for it in
+   * at the caret. Files go to the note they were dropped on, so deleting the
+   * note takes its attachments with it.
+   */
+  async function uploadFiles(files: File[]) {
+    if (!files.length) return;
+    setUploading(true);
+    setUploadError(null);
+
+    const field = textareaRef.current;
+    let next = field?.value ?? content;
+    let caret = field?.selectionStart ?? next.length;
+
+    for (const file of files) {
+      const form = new FormData();
+      form.append("file", file);
+
+      try {
+        const uploaded = await api<{ id: string; filename: string; mime: string }>(
+          `/api/notes/${note.id}/attachments`,
+          { method: "POST", body: form },
+        );
+
+        // A picture wants a line of its own; a file can sit in the sentence.
+        const snippet = attachmentMarkdown(uploaded);
+        const insert = isImageMime(uploaded.mime) ? `\n${snippet}\n` : snippet;
+
+        next = `${next.slice(0, caret)}${insert}${next.slice(caret)}`;
+        caret += insert.length;
+      } catch (error) {
+        setUploadError(
+          error instanceof ApiError ? error.message : "That file could not be attached",
+        );
+      }
+    }
+
+    writeContent(next);
+    setUploading(false);
+    requestAnimationFrame(() => {
+      field?.focus();
+      field?.setSelectionRange(caret, caret);
+    });
   }
 
   /** Opens or closes the link menu based on where the caret is now. */
@@ -463,6 +527,23 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                 </AnimatePresence>
 
                 <MenuItem
+                  icon={Globe}
+                  label="Share a link"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setShareOpen(true);
+                  }}
+                />
+                <MenuItem
+                  icon={History}
+                  label="Version history"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setHistoryOpen(true);
+                  }}
+                />
+
+                <MenuItem
                   icon={note.archived ? ArchiveRestore : Archive}
                   label={note.archived ? "Restore from archive" : "Archive"}
                   onClick={() => {
@@ -686,6 +767,12 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
           <FormatButton label="Code" onClick={() => wrapSelection("`", "`")}>
             <Code className="size-3.5" />
           </FormatButton>
+          <FormatButton
+            label={uploading ? "Attaching…" : "Attach a file"}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Paperclip className={cn("size-3.5", uploading && "animate-pulse")} />
+          </FormatButton>
           <FormatButton label="Checklist" onClick={() => prefixLine("- [ ] ")}>
             <ListChecks className="size-3.5" />
           </FormatButton>
@@ -722,6 +809,26 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
               onClick={(event) => syncLinkMenu(event.currentTarget)}
               onBlur={() => setLinkMenu(null)}
               onKeyDown={handleKeyDown}
+              /*
+               * Pasting a screenshot and dropping a file are the two ways
+               * anyone actually attaches anything; the toolbar button is the
+               * fallback for a keyboard.
+               */
+              onPaste={(event) => {
+                const files = [...event.clipboardData.files];
+                if (!files.length) return;
+                event.preventDefault();
+                void uploadFiles(files);
+              }}
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                const files = [...event.dataTransfer.files];
+                if (!files.length) return;
+                event.preventDefault();
+                void uploadFiles(files);
+              }}
               placeholder="Start writing... markdown works here"
               spellCheck={false}
               className="field h-full w-full resize-none bg-transparent px-4 py-4 leading-[1.75] text-foreground scroll-thin"
@@ -785,6 +892,57 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
           </div>
         )}
       </div>
+
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept={Object.keys(ALLOWED_MIME).join(",")}
+        className="hidden"
+        onChange={(event) => {
+          const files = [...(event.target.files ?? [])];
+          event.target.value = "";
+          void uploadFiles(files);
+        }}
+      />
+
+      <AnimatePresence>
+        {uploadError && (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            onClick={() => setUploadError(null)}
+            className="mx-4 mb-3 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-left text-[11px] text-danger"
+          >
+            {uploadError} — tap to dismiss
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Mounted only once asked for, so neither ships in the first paint. */}
+      {historyOpen && (
+        <HistorySheet
+          noteId={note.id}
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          onRestore={(version) => {
+            setContent(version.content);
+            updateNote(note.id, { title: version.title, content: version.content }, 0);
+            setHistoryOpen(false);
+          }}
+        />
+      )}
+
+      {shareOpen && (
+        <ShareDialog
+          noteId={note.id}
+          title={note.title}
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </motion.div>
   );
 }

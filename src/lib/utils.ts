@@ -22,6 +22,8 @@ export function stripMarkdown(text: string) {
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
     .replace(/`([^`]+)`/g, "$1")
+    // Images carry no prose, so an excerpt is better off without their alt text.
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[\[([^\]]+)\]\]/g, (_match, inner: string) => inner.split("|").pop()!.trim())
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/\s+/g, " ")

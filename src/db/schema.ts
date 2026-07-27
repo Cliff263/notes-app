@@ -1,5 +1,6 @@
 import {
   boolean,
+  customType,
   index,
   type AnyPgColumn,
   integer,
@@ -7,8 +8,24 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
+
+/**
+ * Binary columns, carried over the wire in Postgres' hex format rather than as
+ * a driver-native buffer. Neon speaks HTTP and node-postgres speaks the wire
+ * protocol, and they disagree about what a `bytea` looks like in JavaScript;
+ * the hex form is what both of them accept and return without argument.
+ */
+const bytea = customType<{ data: Buffer; driverData: Buffer | string }>({
+  dataType: () => "bytea",
+  toDriver: (value) => `\\x${value.toString("hex")}`,
+  fromDriver: (value) =>
+    typeof value === "string"
+      ? Buffer.from(value.startsWith("\\x") ? value.slice(2) : value, "hex")
+      : value,
+});
 
 /* -------------------------------------------------------------------------- */
 /*  Auth.js tables                                                            */
@@ -156,6 +173,94 @@ export const events = pgTable(
   (t) => [index("event_user_idx").on(t.userId), index("event_start_idx").on(t.startsAt)],
 );
 
+/**
+ * A snapshot of a note as it was before an edit. Written by the note's own
+ * PATCH route rather than a trigger, so the decision about *when* a change is
+ * worth keeping lives next to the code that knows what changed.
+ */
+export const noteVersions = pgTable(
+  "noteVersion",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    noteId: text("noteId")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("createdAt", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("noteVersion_note_idx").on(t.noteId, t.createdAt)],
+);
+
+/**
+ * A public link to one note.
+ *
+ * The token is stored as it appears in the URL, unlike the reset tokens above:
+ * those grant access to an account and are never shown twice, while this one is
+ * a link the owner is meant to be able to copy again tomorrow. Revoking deletes
+ * the row, so a withdrawn link stops working immediately.
+ */
+export const noteShares = pgTable(
+  "noteShare",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    noteId: text("noteId")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull(),
+    /** Reserved for collaborative editing; the public page is read-only. */
+    allowEdit: boolean("allowEdit").notNull().default(false),
+    expiresAt: timestamp("expiresAt", { mode: "date", withTimezone: true }),
+    createdAt: timestamp("createdAt", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("noteShare_token_idx").on(t.token),
+    // One link per note: sharing is a state the note is in, not a list.
+    uniqueIndex("noteShare_note_idx").on(t.noteId),
+  ],
+);
+
+/** Files pasted or dropped into a note, kept in the database as bytes. */
+export const attachments = pgTable(
+  "attachment",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    noteId: text("noteId")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    filename: text("filename").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("createdAt", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("attachment_note_idx").on(t.noteId)],
+);
+
 export type DbNote = typeof notes.$inferSelect;
 export type DbEvent = typeof events.$inferSelect;
 export type DbUser = typeof users.$inferSelect;
+export type DbNoteVersion = typeof noteVersions.$inferSelect;
+export type DbNoteShare = typeof noteShares.$inferSelect;
+export type DbAttachment = typeof attachments.$inferSelect;

@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { notes } from "@/db/schema";
 import { buildExport } from "@/lib/export";
+import { loadExportImages } from "@/lib/export-images";
 import { serializeNote } from "@/lib/serialize";
 import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
 import { EXPORT_FORMATS, type ExportFormat } from "@/lib/types";
@@ -31,7 +32,13 @@ export async function GET(request: Request) {
       return Response.json({ error: "Nothing to export" }, { status: 404 });
     }
 
-    const { body, mime } = await buildExport(included, requested, "Square Notes export");
+    const images = await loadExportImages(included, userId);
+    const { body, mime } = await buildExport(
+      included,
+      requested,
+      "Square Notes export",
+      images,
+    );
     const stamp = new Date().toISOString().slice(0, 10);
 
     return new Response(body as BodyInit, {

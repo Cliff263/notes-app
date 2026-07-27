@@ -1,8 +1,49 @@
-import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
+import {
+  BorderStyle,
+  Document,
+  HeadingLevel,
+  ImageRun,
+  Packer,
+  Paragraph,
+  TextRun,
+} from "docx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { fitWithin, imageSize } from "./image-size";
 import { inlineToText, parseMarkdown, type Block, type Inline } from "./markdown";
 import type { Note } from "./types";
 import { longDateTime, wordCount } from "./utils";
+
+/**
+ * Attached images, keyed by the `src` they appear under in the markdown. The
+ * route loads them from the database and hands them over; nothing in here
+ * reaches out to the network, so an export can never be talked into fetching a
+ * URL a note happens to contain.
+ */
+export type ImageBytes = { data: Buffer; mime: string; width?: number; height?: number };
+export type ImageBundle = Map<string, ImageBytes>;
+
+/**
+ * An image that is about to be drawn does not also need its alt text written
+ * out; one that cannot be embedded keeps it, so a reader still knows it exists.
+ */
+function stripEmbedded(block: Block, images: ImageBundle): Block {
+  if (block.type === "code" || block.type === "rule") return block;
+  return {
+    ...block,
+    content: block.content.filter(
+      (node) => node.type !== "image" || !images.has(node.src),
+    ),
+  };
+}
+
+function imagesIn(blocks: Block[]) {
+  const found: Array<Inline & { type: "image" }> = [];
+  for (const block of blocks) {
+    if (block.type === "code" || block.type === "rule") continue;
+    for (const node of block.content) if (node.type === "image") found.push(node);
+  }
+  return found;
+}
 
 export const EXPORT_MIME: Record<string, string> = {
   pdf: "application/pdf",
@@ -100,6 +141,43 @@ function inlineRuns(content: Inline[], size = 22) {
   });
 }
 
+/** Word can embed these; anything else falls back to its alt text. */
+const DOCX_IMAGE_TYPES: Record<string, "png" | "jpg" | "gif"> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+};
+
+function imageParagraphs(block: Block, images: ImageBundle) {
+  if (block.type === "code" || block.type === "rule") return [];
+
+  const paragraphs: Paragraph[] = [];
+  for (const node of block.content) {
+    if (node.type !== "image") continue;
+
+    const found = images.get(node.src);
+    const type = found && DOCX_IMAGE_TYPES[found.mime];
+    if (!found || !type) continue;
+
+    const size = imageSize(found.data, found.mime);
+    if (!size) continue;
+
+    paragraphs.push(
+      new Paragraph({
+        children: [
+          new ImageRun({
+            type,
+            data: found.data,
+            transformation: fitWithin(size, 460, 620),
+          }),
+        ],
+        spacing: { before: 120, after: 120 },
+      }),
+    );
+  }
+  return paragraphs;
+}
+
 function blockToParagraph(block: Block) {
   switch (block.type) {
     case "heading":
@@ -158,7 +236,11 @@ function blockToParagraph(block: Block) {
   }
 }
 
-export async function toDocx(notes: Note[], documentTitle: string) {
+export async function toDocx(
+  notes: Note[],
+  documentTitle: string,
+  images: ImageBundle = new Map(),
+) {
   const children = notes.flatMap((note, index) => {
     const blocks = [
       new Paragraph({
@@ -170,7 +252,12 @@ export async function toDocx(notes: Note[], documentTitle: string) {
         children: [new TextRun({ text: metaLine(note), size: 18, color: "6B6B76" })],
         spacing: { after: 240 },
       }),
-      ...parseMarkdown(note.content).map(blockToParagraph),
+      // Each block, followed by any images it referenced, so a picture lands
+      // where it was written rather than at the end of the note.
+      ...parseMarkdown(note.content).flatMap((block) => [
+        blockToParagraph(stripEmbedded(block, images)),
+        ...imageParagraphs(block, images),
+      ]),
     ];
 
     // Page break between notes in a bulk export.
@@ -188,7 +275,7 @@ export async function toDocx(notes: Note[], documentTitle: string) {
   return Buffer.from(await Packer.toBuffer(doc));
 }
 
-export async function toPdf(notes: Note[]) {
+export async function toPdf(notes: Note[], images: ImageBundle = new Map()) {
   const pdf = await PDFDocument.create();
   const body = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -241,7 +328,40 @@ export async function toPdf(notes: Note[]) {
     }
   };
 
-  notes.forEach((note, index) => {
+  /** Draws an attached image at its own scale, paging if it will not fit. */
+  const drawImage = async (src: string) => {
+    const found = images.get(src);
+    if (!found) return false;
+
+    const embedded =
+      found.mime === "image/png"
+        ? await pdf.embedPng(found.data).catch(() => null)
+        : found.mime === "image/jpeg"
+          ? await pdf.embedJpg(found.data).catch(() => null)
+          : null;
+
+    if (!embedded) return false;
+
+    const scale = Math.min(MAX_WIDTH / embedded.width, 1);
+    const width = embedded.width * scale;
+    const height = embedded.height * scale;
+
+    if (y - height < MARGIN) newPage();
+    // Taller than a whole page: shrink to what is left rather than clipping.
+    const drawHeight = Math.min(height, PAGE.height - MARGIN * 2);
+    const drawWidth = width * (drawHeight / height);
+
+    page.drawImage(embedded, {
+      x: MARGIN,
+      y: y - drawHeight,
+      width: drawWidth,
+      height: drawHeight,
+    });
+    y -= drawHeight + 10;
+    return true;
+  };
+
+  for (const [index, note] of notes.entries()) {
     if (index > 0) newPage();
 
     draw(note.title || "Untitled note", { font: bold, size: 20, gap: 8 });
@@ -259,7 +379,9 @@ export async function toPdf(notes: Note[]) {
     }
 
     // Same parsed blocks the preview uses, so the PDF matches what was written.
-    for (const block of parseMarkdown(note.content)) {
+    for (const original of parseMarkdown(note.content)) {
+      const block = stripEmbedded(original, images);
+
       switch (block.type) {
         case "heading":
           y -= 6;
@@ -308,8 +430,11 @@ export async function toPdf(notes: Note[]) {
           draw(inlineToText(block.content), { size: 11, gap: 5 });
           y -= 4;
       }
+
+      // Whatever the block was, any image it referenced follows it.
+      for (const node of imagesIn([original])) await drawImage(node.src);
     }
-  });
+  }
 
   return Buffer.from(await pdf.save());
 }
@@ -318,12 +443,13 @@ export async function buildExport(
   notes: Note[],
   format: string,
   documentTitle: string,
+  images: ImageBundle = new Map(),
 ): Promise<{ body: Buffer | string; mime: string }> {
   switch (format) {
     case "pdf":
-      return { body: await toPdf(notes), mime: EXPORT_MIME.pdf };
+      return { body: await toPdf(notes, images), mime: EXPORT_MIME.pdf };
     case "docx":
-      return { body: await toDocx(notes, documentTitle), mime: EXPORT_MIME.docx };
+      return { body: await toDocx(notes, documentTitle, images), mime: EXPORT_MIME.docx };
     case "txt":
       return { body: toPlainText(notes), mime: EXPORT_MIME.txt };
     default:

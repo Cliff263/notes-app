@@ -34,6 +34,7 @@ survive a refresh:
 | `/tags/[tag]` | Notes carrying that tag |
 | `/calendar` | Month view and what's upcoming |
 | `/settings` | Profile, appearance, export, account |
+| `/s/[token]` | A shared note, readable without an account |
 
 A new note inherits the view you create it from — from `/category/work` it lands
 in Work, from `/tags/react` it arrives already tagged `#react`.
@@ -52,6 +53,23 @@ in Work, from `/tags/react` it arrives already tagged `#react`.
   want different link text. Type `[[` and a completion menu offers your notes;
   a link to a title that does not exist yet renders as an offer to create it.
   The note being pointed at lists its incoming links under "Linked from".
+- Paste a screenshot, drop a file on the editor, or use the paperclip. Images
+  appear in the preview and are embedded into PDF and Word exports; anything
+  else becomes a link. Up to 5 MB per file, from a fixed list of types.
+
+**History and sharing**
+
+- Every note keeps its last 30 versions. A run of small edits collapses into one
+  snapshot, so history reads as a list of sessions rather than keystrokes, but a
+  paste or a large deletion always earns its own entry. ⋯ → **Version history**
+  shows a line-by-line diff against the note as it stands, and restores any
+  version — restoring is itself an edit, so nothing is lost by trying it.
+- ⋯ → **Share a link** publishes the note at `/s/<token>`. Anyone with the link
+  can read it without an account, and only read it: there is no editor on that
+  page. Links can expire after a day, a week or a month, and "Stop sharing"
+  withdraws one immediately. Each note has at most one link, so revoking is
+  never a question of which link you meant. Shared pages are marked `noindex`,
+  and images inside a shared note are served against the same token.
 
 **Search**
 
@@ -158,9 +176,10 @@ authorized redirect URI on the OAuth client (and your production URL when you de
 npm run db:push
 ```
 
-Run this again after pulling changes that add columns — `notes.deletedAt`,
-`notes.dueAt` and `events.noteId` were added for trash, due dates and
-note-to-event links. All three are nullable, so the migration is additive.
+Run this again after pulling changes that add columns or tables. Everything so
+far has been additive: `notes.deletedAt`, `notes.dueAt` and `events.noteId` for
+trash, due dates and note-to-event links, then the `noteVersion`, `noteShare`
+and `attachment` tables for history, sharing and files.
 
 `db:push` finishes by running `db:extras`, which adds what a Drizzle schema
 cannot describe — today that is the GIN index behind full-text search, built
@@ -213,6 +232,12 @@ Then `npm run db:push` as usual.
   out which addresses have accounts.
 - Reset and confirmation tokens are stored only as hashes, expire, and are
   single-use.
+- Share tokens are 32 random bytes and *are* stored as written, because unlike a
+  reset link they are meant to be copied again tomorrow. They grant read access
+  to one note and nothing else, and public reads are rate limited.
+- Attachments are accepted only from a fixed list of types, so nothing a browser
+  would execute can be stored. Everything but an image is served as a download
+  rather than inline, with `X-Content-Type-Options: nosniff`.
 
 ## Tests
 
@@ -233,6 +258,7 @@ src/
   app/
     (auth)/login, (auth)/signup   Sign-in and sign-up screens
     api/                          Route handlers for notes, events, account, auth, export
+    s/[token]/                    A publicly shared note
     favorites/, pinned/, archive/ Note views
     category/[category]/          One view per category
     tags/, tags/[tag]/            Tag index and per-tag view
@@ -254,7 +280,15 @@ src/
 
 Every note and event row carries a `userId`, and each API route resolves the user
 from the session before it touches the database — a request can only ever read or
-write its own rows.
+write its own rows. The two routes a signed-out visitor can reach, a shared note
+and the images inside one, take the share token in place of a session and check
+that it names the note being asked for.
+
+Files are stored in Postgres as `bytea` rather than in object storage: no second
+service to configure, no signed URLs to expire, and an attachment is removed by
+the same cascade that removes its note. The 5 MB cap is what keeps that
+reasonable. The driver disagreement about what a `bytea` looks like in
+JavaScript is settled in `src/db/schema.ts`, which sends and reads it as hex.
 
 The note list is paginated with a cursor and filtered, searched and ordered in
 SQL, so a filtered view shows every match rather than only the ones that happened

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { notes } from "@/db/schema";
 import { buildExport, slugify } from "@/lib/export";
+import { loadExportImages } from "@/lib/export-images";
 import { serializeNote } from "@/lib/serialize";
 import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
 import { EXPORT_FORMATS, type ExportFormat } from "@/lib/types";
@@ -27,7 +28,8 @@ export async function GET(request: Request, { params }: Params) {
     if (!row) return Response.json({ error: "Note not found" }, { status: 404 });
 
     const note = serializeNote(row);
-    const { body, mime } = await buildExport([note], requested, note.title);
+    const images = await loadExportImages([note], userId);
+    const { body, mime } = await buildExport([note], requested, note.title, images);
     const filename = `${slugify(note.title)}.${requested}`;
 
     return new Response(body as BodyInit, {

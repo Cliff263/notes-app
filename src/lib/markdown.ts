@@ -11,6 +11,8 @@ export type Inline =
   | { type: "italic"; value: string }
   | { type: "code"; value: string }
   | { type: "link"; value: string; href: string }
+  /** `![alt](src)` — an attached image. `value` is the alt text. */
+  | { type: "image"; value: string; src: string }
   /** `[[Another note]]`, or `[[Another note|as this]]`. */
   | { type: "wikilink"; value: string; target: string };
 
@@ -25,10 +27,11 @@ export type Block =
   | { type: "code"; value: string }
   | { type: "rule" };
 
-// The wikilink alternative goes first: `[[a]]` must not be read as the start of
-// a `[label](href)` link.
+// Order matters twice over: `[[a]]` must not be read as the start of a
+// `[label](href)` link, and `![alt](src)` must be matched before the plain link
+// alternative would swallow everything after the `!`.
 const INLINE_PATTERN =
-  /(\[\[[^\]\n]+\]\])|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(`[^`\n]+`)|(\[[^\]\n]+\]\([^)\s]+\))/;
+  /(\[\[[^\]\n]+\]\])|(!\[[^\]\n]*\]\([^)\s]+\))|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(`[^`\n]+`)|(\[[^\]\n]+\]\([^)\s]+\))/;
 
 /** `- [ ] something` / `- [x] something`, in any list marker. */
 const TASK_PATTERN = /^(\s*)([-*+])\s+\[([ xX])\]\s?(.*)$/;
@@ -53,6 +56,9 @@ export function parseInline(text: string): Inline[] {
         target: target.trim(),
         value: (label ?? target).trim(),
       });
+    } else if (token.startsWith("![")) {
+      const [, alt, src] = /!\[([^\]]*)\]\(([^)\s]+)\)/.exec(token) ?? [];
+      out.push({ type: "image", value: alt ?? "", src: src ?? "" });
     } else if (token.startsWith("**")) {
       out.push({ type: "bold", value: token.slice(2, -2) });
     } else if (token.startsWith("`")) {
@@ -176,7 +182,12 @@ export function parseMarkdown(source: string): Block[] {
 
 /** Inline nodes flattened back to plain text, for PDF drawing. */
 export function inlineToText(content: Inline[]) {
-  return content.map((node) => node.value).join("");
+  return content
+    .map((node) =>
+      // An image has no text of its own; name it so a reader knows it was there.
+      node.type === "image" ? `[image${node.value ? `: ${node.value}` : ""}]` : node.value,
+    )
+    .join("");
 }
 
 /**

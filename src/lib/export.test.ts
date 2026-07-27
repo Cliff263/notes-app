@@ -95,3 +95,40 @@ describe("binary exports", () => {
     expect(docx.subarray(0, 2).toString()).toBe("PK");
   });
 });
+
+describe("attached images", () => {
+  const illustrated: Note = {
+    ...note,
+    id: "n4",
+    content: "Look at this:\n\n![the chart](/api/attachments/a1)\n\nThat is all.",
+  };
+
+  /* A 1×1 red PNG — the smallest thing pdf-lib and docx will both accept. */
+  const pixel = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const bundle = new Map([["/api/attachments/a1", { data: pixel, mime: "image/png" }]]);
+
+  it("embeds the picture in a PDF instead of writing out its alt text", async () => {
+    const withImage = await toPdf([illustrated], bundle);
+    const withoutImage = await toPdf([illustrated]);
+
+    expect(withImage.subarray(0, 5).toString()).toBe("%PDF-");
+    // The embedded stream has to make the file bigger than the text alone.
+    expect(withImage.length).toBeGreaterThan(withoutImage.length);
+  });
+
+  it("embeds the picture in Word", async () => {
+    const withImage = await toDocx([illustrated], "Export", bundle);
+    const withoutImage = await toDocx([illustrated], "Export");
+
+    expect(withImage.subarray(0, 2).toString()).toBe("PK");
+    expect(withImage.length).toBeGreaterThan(withoutImage.length);
+  });
+
+  it("falls back to the alt text when the bytes are not to hand", async () => {
+    const out = toPlainText([illustrated]);
+    expect(out).toContain("[image: the chart]");
+  });
+});
