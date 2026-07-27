@@ -5,7 +5,14 @@ import { CalendarClock, Check, ListChecks, Pin, RotateCcw, Star } from "lucide-r
 import { taskProgress } from "@/lib/markdown";
 import { highlightSegments, stripHighlights } from "@/lib/search";
 import type { Note } from "@/lib/types";
-import { cn, readingTime, relativeTime, shortDate, stripMarkdown } from "@/lib/utils";
+import {
+  cn,
+  readingTime,
+  relativeTime,
+  shortDate,
+  stripMarkdown,
+  timeLabel,
+} from "@/lib/utils";
 import { tap } from "@/components/motion";
 import { useNoteActions } from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
@@ -115,7 +122,7 @@ export function NoteCard({ note, selected }: { note: Note; selected: boolean }) 
         {note.dueAt && (
           <span className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10px] text-glow-2">
             <CalendarClock className="size-2.5" />
-            {shortDate(note.dueAt)}
+            {shortDate(note.dueAt)} · {timeLabel(note.dueAt)}
           </span>
         )}
 

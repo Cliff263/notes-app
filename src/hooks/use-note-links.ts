@@ -43,6 +43,6 @@ export function useBacklinks(id: string | null, enabled = true) {
     queryFn: () => api<{ backlinks: Backlink[] }>(`/api/notes/${id}/backlinks`),
     select: (data) => data.backlinks,
     enabled: Boolean(id) && enabled,
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
   });
 }

@@ -20,14 +20,19 @@ import {
   User,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type ComponentType } from "react";
 import { ROUTES } from "@/lib/routes";
-import { CATEGORIES } from "@/lib/types";
+import { CATEGORIES, type NoteFilter } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatedNumber, tap } from "@/components/motion";
-import { useNoteActions, useSummary } from "@/hooks/use-notes";
+import {
+  prefetchNotesFeed,
+  useNoteActions,
+  useSummary,
+} from "@/hooks/use-notes";
 import { useNotesStore } from "@/store/notes-store";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -119,12 +124,14 @@ export function Sidebar() {
           href={ROUTES.all}
           icon={NotebookText}
           label="All Notes"
+          filter={{ kind: "all" }}
           active={pathname === ROUTES.all}
         />
         <NavLink
           href={ROUTES.favorites}
           icon={Star}
           label="Favorites"
+          filter={{ kind: "favorites" }}
           count={favoriteCount}
           active={pathname === ROUTES.favorites}
         />
@@ -132,6 +139,7 @@ export function Sidebar() {
           href={ROUTES.pinned}
           icon={Pin}
           label="Pinned"
+          filter={{ kind: "pinned" }}
           count={pinnedCount}
           active={pathname === ROUTES.pinned}
         />
@@ -176,6 +184,7 @@ export function Sidebar() {
                       href={ROUTES.category(category)}
                       icon={CATEGORY_ICONS[category] ?? FileText}
                       label={category}
+                      filter={{ kind: "category", value: category }}
                       count={counts[category]}
                       active={pathname === ROUTES.category(category)}
                     />
@@ -185,6 +194,7 @@ export function Sidebar() {
                   href={ROUTES.archive}
                   icon={Archive}
                   label="Archive"
+                  filter={{ kind: "archive" }}
                   count={archivedCount}
                   active={pathname === ROUTES.archive}
                 />
@@ -192,6 +202,7 @@ export function Sidebar() {
                   href={ROUTES.trash}
                   icon={Trash2}
                   label="Trash"
+                  filter={{ kind: "trash" }}
                   count={trashedCount}
                   active={pathname === ROUTES.trash}
                 />
@@ -221,6 +232,7 @@ export function Sidebar() {
               key={tag}
               href={ROUTES.tag(tag)}
               label={`#${tag}`}
+              filter={{ kind: "tag", value: tag }}
               active={pathname === ROUTES.tag(tag)}
             />
           ))}
@@ -289,21 +301,33 @@ function NavLink({
   label,
   active,
   count,
+  filter,
 }: {
   href: string;
   icon: ComponentType<{ className?: string }>;
   label: string;
   active?: boolean;
   count?: number;
+  filter?: NoteFilter;
 }) {
   const router = useRouter();
+  const client = useQueryClient();
+
+  const warm = () => {
+    router.prefetch(href);
+    if (filter) {
+      const { search, sort } = useNotesStore.getState();
+      void prefetchNotesFeed(client, { filter, search, sort });
+    }
+  };
 
   return (
     <Link
       href={href}
       // Warm the route on intent so the click lands on a rendered page.
-      onMouseEnter={() => router.prefetch(href)}
-      onTouchStart={() => router.prefetch(href)}
+      onMouseEnter={warm}
+      onFocus={warm}
+      onTouchStart={warm}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition",
         active
@@ -324,14 +348,30 @@ function TagChip({
   href,
   label,
   active,
+  filter,
 }: {
   href: string;
   label: string;
   active?: boolean;
+  filter?: NoteFilter;
 }) {
+  const router = useRouter();
+  const client = useQueryClient();
+
+  const warm = () => {
+    router.prefetch(href);
+    if (filter) {
+      const { search, sort } = useNotesStore.getState();
+      void prefetchNotesFeed(client, { filter, search, sort });
+    }
+  };
+
   return (
     <Link
       href={href}
+      onMouseEnter={warm}
+      onFocus={warm}
+      onTouchStart={warm}
       className={cn(
         "rounded-md px-2 py-1 text-[11px] transition",
         active

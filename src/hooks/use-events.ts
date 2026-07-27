@@ -21,11 +21,11 @@ export type EventDraft = {
   recurrence?: string | null;
 };
 
-export function useEvents() {
+export function useEvents(enabled = true) {
   return useQuery({
     queryKey: LIST_KEY,
     queryFn: () => api<CalendarEvent[]>("/api/events"),
-    refetchInterval: 30_000,
+    enabled,
   });
 }
 
@@ -59,19 +59,17 @@ export function useEventActions() {
       );
       return { previous, optimisticId };
     },
-    onSuccess: (event, _draft, context) =>
+    onSuccess: (event, _draft, context) => {
       client.setQueryData<CalendarEvent[]>(LIST_KEY, (current) =>
         sorted([
           ...(current ?? []).filter((item) => item.id !== context?.optimisticId),
           event,
         ]),
-      ),
-    onError: (_error, _draft, context) =>
-      client.setQueryData(LIST_KEY, context?.previous ?? []),
-    onSettled: () => {
-      void client.invalidateQueries({ queryKey: LIST_KEY });
+      );
       void client.invalidateQueries({ queryKey: queryKeys.account.all });
     },
+    onError: (_error, _draft, context) =>
+      client.setQueryData(LIST_KEY, context?.previous ?? []),
   });
 
   const update = useMutation({
@@ -100,7 +98,6 @@ export function useEventActions() {
       ),
     onError: (_error, _variables, context) =>
       client.setQueryData(LIST_KEY, context?.previous ?? []),
-    onSettled: () => void client.invalidateQueries({ queryKey: LIST_KEY }),
   });
 
   const remove = useMutation({
@@ -116,10 +113,8 @@ export function useEventActions() {
     onError: (_error, _id, context) => {
       if (context?.previous) client.setQueryData(LIST_KEY, context.previous);
     },
-    onSettled: () => {
-      void client.invalidateQueries({ queryKey: LIST_KEY });
-      void client.invalidateQueries({ queryKey: queryKeys.account.all });
-    },
+    onSuccess: () =>
+      void client.invalidateQueries({ queryKey: queryKeys.account.all }),
   });
 
   return useMemo(

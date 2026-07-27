@@ -52,6 +52,8 @@ import {
   readingTime,
   shortDate,
   stripMarkdown,
+  timeLabel,
+  toLocalInputValue,
   wordCount,
 } from "@/lib/utils";
 import { Stagger, StaggerItem } from "@/components/motion";
@@ -227,10 +229,11 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const { createEvent } = useEventActions();
   // The editor needs events to show what this note is already linked to;
   // React Query dedupes this with the calendar page's own query.
-  const { data: events = [] } = useEvents();
+  const { data: events = [] } = useEvents(Boolean(note.dueAt));
 
   const linkedEvents = events.filter((event) => event.noteId === note.id);
   const scheduled = linkedEvents.length > 0;
+  const dueLocal = note.dueAt ? toLocalInputValue(note.dueAt) : "";
   const menuRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -439,6 +442,21 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
 
     if (ok && !note.dueAt) updateNote(note.id, { dueAt: start.toISOString() });
     setScheduling(false);
+  }
+
+  function updateDueDate(date: string) {
+    if (!date) {
+      updateNote(note.id, { dueAt: null });
+      return;
+    }
+    const time = dueLocal.slice(11, 16) || "09:00";
+    updateNote(note.id, { dueAt: new Date(`${date}T${time}`).toISOString() });
+  }
+
+  function updateDueTime(time: string) {
+    const date = dueLocal.slice(0, 10);
+    if (!date || !time) return;
+    updateNote(note.id, { dueAt: new Date(`${date}T${time}`).toISOString() });
   }
 
   function addTag() {
@@ -676,19 +694,25 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
         />
 
         {/* Due date, which also puts the note on the calendar */}
-        <label className="flex items-center gap-1.5 rounded-md border border-line bg-input px-2 py-1 text-[11px] text-muted-2">
+        <div className="flex items-center gap-1.5 rounded-md border border-line bg-input px-2 py-1 text-[11px] text-muted-2">
           <CalendarClock className="size-3.5" />
           <input
             type="date"
-            value={note.dueAt ? note.dueAt.slice(0, 10) : ""}
-            onChange={(event) =>
-              updateNote(note.id, {
-                dueAt: event.target.value
-                  ? new Date(`${event.target.value}T09:00`).toISOString()
-                  : null,
-              })
-            }
+            aria-label="Due date"
+            value={dueLocal.slice(0, 10)}
+            onChange={(event) => updateDueDate(event.target.value)}
             className="field-sm bg-transparent text-muted outline-none"
+          />
+          <span aria-hidden className="text-muted-2">
+            ·
+          </span>
+          <input
+            type="time"
+            aria-label="Due time"
+            value={dueLocal.slice(11, 16)}
+            disabled={!note.dueAt}
+            onChange={(event) => updateDueTime(event.target.value)}
+            className="field-sm w-[72px] bg-transparent text-muted outline-none disabled:opacity-40"
           />
           {note.dueAt && (
             <button
@@ -700,7 +724,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
               <X className="size-3" />
             </button>
           )}
-        </label>
+        </div>
 
         <button
           type="button"
@@ -728,7 +752,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                   color: EVENT_COLOR_VALUES[event.color],
                 }}
               />
-              {shortDate(event.startsAt)} · {event.title}
+              {shortDate(event.startsAt)} at {timeLabel(event.startsAt)} · {event.title}
             </Link>
           ))}
         </div>

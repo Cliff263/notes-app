@@ -11,11 +11,11 @@ export function QueryProvider({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            // Notes and events change from this tab far more often than from
-            // elsewhere, so a short stale window avoids refetching on every
-            // navigation while still catching outside edits on focus.
-            staleTime: 30_000,
-            gcTime: 10 * 60_000,
+            // Mutations update the cache directly and other tabs broadcast
+            // invalidations, so route changes can reuse data for five minutes
+            // instead of turning every mount into another API request.
+            staleTime: 5 * 60_000,
+            gcTime: 30 * 60_000,
             refetchOnWindowFocus: true,
             refetchOnReconnect: true,
             retry: shouldRetry,

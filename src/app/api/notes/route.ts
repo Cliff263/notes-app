@@ -178,10 +178,18 @@ export async function POST(request: Request) {
   try {
     const userId = await requireUserId();
     const body = await request.json().catch(() => ({}));
+    const requestedId =
+      typeof body.id === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        body.id,
+      )
+        ? body.id
+        : undefined;
 
-    const [row] = await db
+    const [inserted] = await db
       .insert(notes)
       .values({
+        ...(requestedId ? { id: requestedId } : {}),
         userId,
         title: typeof body.title === "string" ? body.title : "Untitled note",
         content: typeof body.content === "string" ? body.content : "",
@@ -191,7 +199,21 @@ export async function POST(request: Request) {
         favorite: Boolean(body.favorite),
         archived: Boolean(body.archived),
       })
+      .onConflictDoNothing({ target: notes.id })
       .returning();
+
+    const [existing] =
+      !inserted && requestedId
+        ? await db
+            .select()
+            .from(notes)
+            .where(and(eq(notes.id, requestedId), eq(notes.userId, userId)))
+            .limit(1)
+        : [];
+    const row = inserted ?? existing;
+    if (!row) {
+      return Response.json({ error: "Could not create note" }, { status: 409 });
+    }
 
     return Response.json(serializeNote(row), { status: 201 });
   } catch (error) {

@@ -37,6 +37,14 @@ export type Summary = {
   tags: Array<{ tag: string; count: number; titles: string[] }>;
 };
 
+function wikiTargets(content: string) {
+  return [...content.matchAll(/\[\[([^\]]+)\]\]/g)]
+    .map((match) => match[1].split("|")[0].trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join("\u0000");
+}
+
 /**
  * One page of notes at a time, filtered and ordered in SQL. Paging in the
  * database is what keeps a filtered view honest — a client-side filter over
@@ -51,10 +59,7 @@ export function useNotesFeed(query: NoteQuery) {
       return api<NotePage>(`/api/notes?${params}`);
     },
     initialPageParam: null as string | null,
-    getNextPageParam: (last) => last.nextCursor,
-    refetchInterval: 30_000,
-    // Keeps the previous view on screen while the next one loads.
-    placeholderData: (previous) => previous,
+    getNextPageParam: (last: NotePage) => last.nextCursor,
   });
 }
 
@@ -63,7 +68,6 @@ export function useSummary() {
   return useQuery({
     queryKey: queryKeys.notes.summary(),
     queryFn: () => api<Summary>("/api/notes/summary"),
-    refetchInterval: 30_000,
   });
 }
 
@@ -329,30 +333,59 @@ export function useNoteActions() {
     for (const [key, data] of previous) client.setQueryData(key, data);
   };
 
-  const settle = () => {
-    // Includes feeds, details, due notes, search, links, history and summaries.
-    void client.invalidateQueries({ queryKey: queryKeys.notes.all });
-    void client.invalidateQueries({ queryKey: queryKeys.account.all });
-  };
-
   const create = useMutation({
-    mutationFn: (input: { category?: string; tags?: string[]; title?: string }) =>
+    mutationFn: (input: {
+      id: string;
+      category?: string;
+      tags?: string[];
+      title?: string;
+    }) =>
       api<Note>("/api/notes", {
         method: "POST",
         body: JSON.stringify({
+          id: input.id,
           title: input.title ?? "Untitled note",
           content: "",
           category: input.category ?? "Personal",
           tags: input.tags ?? [],
         }),
       }),
+    async onMutate(input) {
+      await client.cancelQueries({ queryKey: queryKeys.notes.all });
+      const previous = snapshot();
+      const previousSelectedId = useNotesStore.getState().selectedId;
+      const now = new Date().toISOString();
+      const optimistic: Note = {
+        id: input.id,
+        title: input.title ?? "Untitled note",
+        content: "",
+        category: input.category ?? "Personal",
+        tags: input.tags ?? [],
+        pinned: false,
+        favorite: false,
+        archived: false,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        dueAt: null,
+      };
+      transitionSummary(client, null, optimistic);
+      prependToCaches(client, optimistic);
+      client.setQueryData(queryKeys.notes.detail(optimistic.id), optimistic);
+      select(optimistic.id);
+      return { previous, previousSelectedId };
+    },
+    onError: (_error, _input, context) => {
+      if (!context) return;
+      restore(context.previous);
+      select(context.previousSelectedId);
+    },
     onSuccess: (note) => {
-      transitionSummary(client, null, note);
       prependToCaches(client, note);
       client.setQueryData(queryKeys.notes.detail(note.id), note);
       select(note.id);
+      void client.invalidateQueries({ queryKey: queryKeys.account.all });
     },
-    onSettled: settle,
   });
 
   const update = useMutation({
@@ -366,15 +399,30 @@ export function useNoteActions() {
     async onMutate({ id, patch }) {
       await client.cancelQueries({ queryKey: queryKeys.notes.all });
       const previous = snapshot();
+      const before =
+        cachedNotes(client).get(id) ??
+        client.getQueryData<Note>(queryKeys.notes.detail(id));
+      const linksChanged =
+        typeof patch.content === "string" &&
+        wikiTargets(before?.content ?? "") !== wikiTargets(patch.content);
       patchCaches(client, id, { ...patch, updatedAt: new Date().toISOString() });
-      return { previous };
+      return { previous, linksChanged };
     },
     onError: (_error, _variables, context) => context && restore(context.previous),
-    onSuccess: (note) => {
+    onSuccess: (note, { id, patch }, context) => {
       reconcileNoteCaches(client, note);
       client.setQueryData(queryKeys.notes.detail(note.id), note);
+      if (context?.linksChanged || typeof patch.title === "string") {
+        void client.invalidateQueries({
+          queryKey: [...queryKeys.notes.all, "backlinks"],
+        });
+      }
+      if (typeof patch.content === "string" || typeof patch.title === "string") {
+        void client.invalidateQueries({
+          queryKey: queryKeys.notes.history(id),
+        });
+      }
     },
-    onSettled: settle,
   });
 
   const duplicate = useMutation({
@@ -393,8 +441,8 @@ export function useNoteActions() {
       prependToCaches(client, note);
       client.setQueryData(queryKeys.notes.detail(note.id), note);
       select(note.id);
+      void client.invalidateQueries({ queryKey: queryKeys.account.all });
     },
-    onSettled: settle,
   });
 
   const remove = useMutation({
@@ -425,8 +473,10 @@ export function useNoteActions() {
     onSuccess: (note, { id, permanent }) => {
       if (permanent || !note) removeFromCaches(client, [id]);
       else reconcileNoteCaches(client, note);
+      if (permanent) {
+        void client.invalidateQueries({ queryKey: queryKeys.account.all });
+      }
     },
-    onSettled: settle,
   });
 
   const restoreNote = useMutation({
@@ -446,7 +496,6 @@ export function useNoteActions() {
       reconcileNoteCaches(client, note);
       client.setQueryData(queryKeys.notes.detail(note.id), note);
     },
-    onSettled: settle,
   });
 
   const bulk = useMutation({
@@ -510,21 +559,25 @@ export function useNoteActions() {
       restore(context.previous);
       useNotesStore.setState(context.previousSelection);
     },
-    onSuccess: (result) => {
+    onSuccess: (result, { action }) => {
       if (Array.isArray(result)) {
         for (const note of result) {
           reconcileNoteCaches(client, note);
           client.setQueryData(queryKeys.notes.detail(note.id), note);
         }
       }
+      if (action === "purge" || action === "emptyTrash") {
+        void client.invalidateQueries({ queryKey: queryKeys.account.all });
+      }
     },
-    onSettled: settle,
   });
 
   return useMemo(
     () => ({
       createNote: (category?: string, tags?: string[], title?: string) =>
-        create.mutateAsync({ category, tags, title }).then((note) => note?.id ?? null),
+        create
+          .mutateAsync({ id: crypto.randomUUID(), category, tags, title })
+          .then((note) => note?.id ?? null),
       updateNote: (id: string, patch: Partial<Note>) => update.mutate({ id, patch }),
       duplicateNote: (source: Note) => duplicate.mutate(source),
       deleteNote: (id: string, permanent?: boolean) => remove.mutate({ id, permanent }),
@@ -582,6 +635,21 @@ export function usePrefetchNote() {
       }),
     [client],
   );
+}
+
+/** Warms a filtered feed when a navigation link receives pointer intent. */
+export function prefetchNotesFeed(client: QueryClient, query: NoteQuery) {
+  return client.prefetchInfiniteQuery({
+    queryKey: queryKeys.notes.list(query),
+    queryFn: ({ pageParam }) => {
+      const params = noteQueryParams(query);
+      if (pageParam) params.set("cursor", pageParam as string);
+      return api<NotePage>(`/api/notes?${params}`);
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (last: NotePage) => last.nextCursor,
+    staleTime: 5 * 60_000,
+  });
 }
 
 /** Notes carrying a due date, for the calendar's side panel. */

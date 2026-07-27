@@ -19,7 +19,6 @@ export function useAccount() {
   return useQuery({
     queryKey: queryKeys.account.detail(),
     queryFn: () => api<Account>("/api/account"),
-    refetchInterval: 30_000,
   });
 }
 
@@ -51,8 +50,6 @@ export function useUpdateAccount() {
     onSuccess: async (_result, name) => {
       await update({ user: { name } });
     },
-    onSettled: () =>
-      void client.invalidateQueries({ queryKey: queryKeys.account.detail() }),
   });
 }
 
