@@ -1,8 +1,10 @@
 import { config } from "dotenv";
 import { Client } from "pg";
+import { configureDatabaseNetworking } from "../src/db/network";
 import { SEARCH_VECTOR } from "../src/lib/search";
 
 config({ path: ".env.local" });
+configureDatabaseNetworking();
 
 /**
  * Everything `drizzle-kit push` cannot express. Right now that is one thing:
@@ -30,7 +32,8 @@ const STATEMENTS = [
 ];
 
 async function main() {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString =
+    process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
       "DATABASE_URL is not set. Put your connection string in .env.local — see README.md.",

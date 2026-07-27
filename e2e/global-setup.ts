@@ -1,9 +1,11 @@
 import { config } from "dotenv";
 import { hash } from "bcryptjs";
 import { Client } from "pg";
+import { configureDatabaseNetworking } from "../src/db/network";
 import { buildSeedRows } from "../src/db/seed-data";
 
 config({ path: ".env.local" });
+configureDatabaseNetworking();
 
 export const TEST_USER = {
   email: "e2e@squarenotes.test",
@@ -17,7 +19,8 @@ export const TEST_USER = {
  * this, one spec's bulk action changes what the next spec sees.
  */
 export default async function globalSetup() {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString =
+    process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("DATABASE_URL must be set to run the end-to-end tests");
   }

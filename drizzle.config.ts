@@ -1,7 +1,9 @@
 import { config } from "dotenv";
 import { defineConfig } from "drizzle-kit";
+import { configureDatabaseNetworking } from "./src/db/network";
 
 config({ path: ".env.local" });
+configureDatabaseNetworking();
 
 export default defineConfig({
   schema: "./src/db/schema.ts",
