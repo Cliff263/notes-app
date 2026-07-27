@@ -1,5 +1,7 @@
 "use client";
 
+import { publishMutation } from "./realtime";
+
 /**
  * Writes that failed because the device was offline. They are replayed in order
  * when the connection returns, so an edit made on a train is not lost.
@@ -52,6 +54,7 @@ export async function flushOutbox() {
       // A 4xx means the request will never succeed; drop it rather than loop.
       if (!response.ok && response.status < 500) continue;
       if (!response.ok) remaining.push(entry);
+      else publishMutation(entry.url);
     } catch {
       remaining.push(entry);
     }

@@ -25,6 +25,7 @@ export function useEvents() {
   return useQuery({
     queryKey: LIST_KEY,
     queryFn: () => api<CalendarEvent[]>("/api/events"),
+    refetchInterval: 30_000,
   });
 }
 
@@ -41,10 +42,36 @@ export function useEventActions() {
         method: "POST",
         body: JSON.stringify(draft),
       }),
-    onSuccess: (event) =>
+    async onMutate(draft) {
+      await client.cancelQueries({ queryKey: LIST_KEY });
+      const previous = client.getQueryData<CalendarEvent[]>(LIST_KEY);
+      const optimisticId = `optimistic-${crypto.randomUUID()}`;
+      const optimistic: CalendarEvent = {
+        ...draft,
+        id: optimisticId,
+        color: draft.color as CalendarEvent["color"],
+        noteId: draft.noteId ?? null,
+        recurrence: draft.recurrence ?? null,
+        createdAt: new Date().toISOString(),
+      };
       client.setQueryData<CalendarEvent[]>(LIST_KEY, (current) =>
-        sorted([...(current ?? []), event]),
+        sorted([...(current ?? []), optimistic]),
+      );
+      return { previous, optimisticId };
+    },
+    onSuccess: (event, _draft, context) =>
+      client.setQueryData<CalendarEvent[]>(LIST_KEY, (current) =>
+        sorted([
+          ...(current ?? []).filter((item) => item.id !== context?.optimisticId),
+          event,
+        ]),
       ),
+    onError: (_error, _draft, context) =>
+      client.setQueryData(LIST_KEY, context?.previous ?? []),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: LIST_KEY });
+      void client.invalidateQueries({ queryKey: queryKeys.account.all });
+    },
   });
 
   const update = useMutation({
@@ -53,10 +80,27 @@ export function useEventActions() {
         method: "PATCH",
         body: JSON.stringify(draft),
       }),
+    async onMutate({ id, draft }) {
+      await client.cancelQueries({ queryKey: LIST_KEY });
+      const previous = client.getQueryData<CalendarEvent[]>(LIST_KEY);
+      client.setQueryData<CalendarEvent[]>(LIST_KEY, (current) =>
+        sorted(
+          (current ?? []).map((event) =>
+            event.id === id
+              ? ({ ...event, ...draft } as CalendarEvent)
+              : event,
+          ),
+        ),
+      );
+      return { previous };
+    },
     onSuccess: (event) =>
       client.setQueryData<CalendarEvent[]>(LIST_KEY, (current) =>
         sorted((current ?? []).map((item) => (item.id === event.id ? event : item))),
       ),
+    onError: (_error, _variables, context) =>
+      client.setQueryData(LIST_KEY, context?.previous ?? []),
+    onSettled: () => void client.invalidateQueries({ queryKey: LIST_KEY }),
   });
 
   const remove = useMutation({
@@ -71,6 +115,10 @@ export function useEventActions() {
     },
     onError: (_error, _id, context) => {
       if (context?.previous) client.setQueryData(LIST_KEY, context.previous);
+    },
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: LIST_KEY });
+      void client.invalidateQueries({ queryKey: queryKeys.account.all });
     },
   });
 

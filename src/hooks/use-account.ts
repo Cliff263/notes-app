@@ -19,6 +19,7 @@ export function useAccount() {
   return useQuery({
     queryKey: queryKeys.account.detail(),
     queryFn: () => api<Account>("/api/account"),
+    refetchInterval: 30_000,
   });
 }
 
@@ -32,13 +33,26 @@ export function useUpdateAccount() {
         method: "PATCH",
         body: JSON.stringify({ name }),
       }),
-    onSuccess: async (_result, name) => {
+    async onMutate(name) {
+      await client.cancelQueries({ queryKey: queryKeys.account.detail() });
+      const previous = client.getQueryData<Account>(queryKeys.account.detail());
       client.setQueryData<Account>(queryKeys.account.detail(), (current) =>
         current ? { ...current, name } : current,
       );
       useAuthStore.getState().setUserName(name);
+      return { previous };
+    },
+    onError: (_error, _name, context) => {
+      if (context?.previous) {
+        client.setQueryData(queryKeys.account.detail(), context.previous);
+        useAuthStore.getState().setUserName(context.previous.name ?? "");
+      }
+    },
+    onSuccess: async (_result, name) => {
       await update({ user: { name } });
     },
+    onSettled: () =>
+      void client.invalidateQueries({ queryKey: queryKeys.account.detail() }),
   });
 }
 

@@ -6,10 +6,16 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryKey,
   type QueryClient,
 } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { api } from "@/lib/api";
+import {
+  noteListDescriptor,
+  noteMatchesList,
+  sortNotesForList,
+} from "@/lib/note-cache";
 import { noteQueryParams, queryKeys, type NoteQuery } from "@/lib/query-keys";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { Note } from "@/lib/types";
@@ -46,6 +52,7 @@ export function useNotesFeed(query: NoteQuery) {
     },
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
+    refetchInterval: 30_000,
     // Keeps the previous view on screen while the next one loads.
     placeholderData: (previous) => previous,
   });
@@ -56,6 +63,7 @@ export function useSummary() {
   return useQuery({
     queryKey: queryKeys.notes.summary(),
     queryFn: () => api<Summary>("/api/notes/summary"),
+    refetchInterval: 30_000,
   });
 }
 
@@ -102,23 +110,15 @@ export function useNote(id: string | null) {
 
 /** Applies an edit to every cached list and to the detail entry. */
 function patchCaches(client: QueryClient, id: string, patch: Partial<Note>) {
-  client.setQueriesData<NoteFeed>({ queryKey: queryKeys.notes.lists() }, (feed) =>
-    feed
-      ? {
-          ...feed,
-          pages: feed.pages.map((page) => ({
-            ...page,
-            notes: page.notes.map((note) =>
-              note.id === id ? { ...note, ...patch } : note,
-            ),
-          })),
-        }
-      : feed,
-  );
+  const current =
+    cachedNotes(client).get(id) ??
+    client.getQueryData<Note>(queryKeys.notes.detail(id));
+  if (!current) return;
 
-  client.setQueryData<Note>(queryKeys.notes.detail(id), (note) =>
-    note ? { ...note, ...patch } : note,
-  );
+  const next = { ...current, ...patch };
+  transitionSummary(client, current, next);
+  reconcileNoteCaches(client, next);
+  client.setQueryData<Note>(queryKeys.notes.detail(id), next);
 }
 
 function removeFromCaches(client: QueryClient, ids: string[]) {
@@ -134,20 +134,181 @@ function removeFromCaches(client: QueryClient, ids: string[]) {
         }
       : feed,
   );
+  client.setQueryData<NotePage>([...queryKeys.notes.all, "due"], (page) =>
+    page
+      ? { ...page, notes: page.notes.filter((note) => !gone.has(note.id)) }
+      : page,
+  );
+  client.setQueriesData<NotePage>(
+    { queryKey: [...queryKeys.notes.all, "search"] },
+    (page) =>
+      page
+        ? { ...page, notes: page.notes.filter((note) => !gone.has(note.id)) }
+        : page,
+  );
+  client.setQueryData<{ titles: Array<{ id: string; title: string }> }>(
+    queryKeys.notes.titles(),
+    (data) =>
+      data
+        ? { titles: data.titles.filter((note) => !gone.has(note.id)) }
+        : data,
+  );
+  for (const id of ids) client.removeQueries({ queryKey: queryKeys.notes.detail(id) });
+}
+
+/** Adds, moves, updates, or removes a note in every cached filtered feed. */
+function reconcileNoteCaches(client: QueryClient, note: Note) {
+  const feeds = client.getQueriesData<NoteFeed>({ queryKey: queryKeys.notes.lists() });
+
+  for (const [key, feed] of feeds) {
+    if (!feed) continue;
+    const list = noteListDescriptor(key);
+    if (!list) continue;
+
+    const existingPage = feed.pages.findIndex((page) =>
+      page.notes.some((item) => item.id === note.id),
+    );
+    const pages = feed.pages.map((page) => ({
+      ...page,
+      notes: page.notes.filter((item) => item.id !== note.id),
+    }));
+
+    if (noteMatchesList(note, list) && pages.length > 0) {
+      const targetPage = existingPage >= 0 ? existingPage : 0;
+      pages[targetPage] = {
+        ...pages[targetPage],
+        notes: sortNotesForList([...pages[targetPage].notes, note], list),
+      };
+    }
+
+    client.setQueryData<NoteFeed>(key, { ...feed, pages });
+  }
+
+  client.setQueryData<NotePage>([...queryKeys.notes.all, "due"], (page) => {
+    if (!page) return page;
+    const notes = page.notes.filter((item) => item.id !== note.id);
+    if (!note.deletedAt && !note.archived && note.dueAt) notes.push(note);
+    return {
+      ...page,
+      notes: notes.sort(
+        (a, b) =>
+          (a.dueAt ?? "").localeCompare(b.dueAt ?? "") ||
+          b.id.localeCompare(a.id),
+      ),
+    };
+  });
+
+  const searches = client.getQueriesData<NotePage>({
+    queryKey: [...queryKeys.notes.all, "search"],
+  });
+  for (const [key, page] of searches) {
+    if (!page) continue;
+    const search = String(key[2] ?? "");
+    const list = { kind: "all", value: null, search, sort: "updated" as const };
+    const notes = page.notes.filter((item) => item.id !== note.id);
+    if (noteMatchesList(note, list)) notes.push(note);
+    client.setQueryData<NotePage>(key, {
+      ...page,
+      notes: sortNotesForList(notes, list).slice(0, 6),
+    });
+  }
+
+  client.setQueryData<{ titles: Array<{ id: string; title: string }> }>(
+    queryKeys.notes.titles(),
+    (data) => {
+      if (!data) return data;
+      const titles = data.titles.filter((item) => item.id !== note.id);
+      if (!note.deletedAt) titles.unshift({ id: note.id, title: note.title });
+      return { titles: titles.slice(0, 500) };
+    },
+  );
+}
+
+function noteContribution(note: Note | null) {
+  const live = Boolean(note && !note.deletedAt);
+  const active = Boolean(live && note && !note.archived);
+  const words =
+    active && note?.content.trim()
+      ? note.content.trim().split(/\s+/).length
+      : 0;
+
+  return {
+    total: active ? 1 : 0,
+    favorites: active && note?.favorite ? 1 : 0,
+    pinned: active && note?.pinned ? 1 : 0,
+    archived: live && note?.archived ? 1 : 0,
+    trashed: note?.deletedAt ? 1 : 0,
+    words,
+    category: active ? note?.category ?? null : null,
+    tags: active ? note?.tags ?? [] : [],
+  };
+}
+
+/** Keeps sidebar/header aggregates in lockstep with an optimistic note change. */
+function transitionSummary(
+  client: QueryClient,
+  before: Note | null,
+  after: Note | null,
+) {
+  const previous = noteContribution(before);
+  const next = noteContribution(after);
+
+  client.setQueryData<Summary>(queryKeys.notes.summary(), (summary) => {
+    if (!summary) return summary;
+
+    const categories = { ...summary.categories };
+    if (previous.category) {
+      categories[previous.category] = Math.max(
+        0,
+        (categories[previous.category] ?? 0) - 1,
+      );
+    }
+    if (next.category) {
+      categories[next.category] = (categories[next.category] ?? 0) + 1;
+    }
+
+    const tagCounts = new Map(
+      summary.tags.map((entry) => [entry.tag, { ...entry, titles: [...entry.titles] }]),
+    );
+    for (const tag of previous.tags) {
+      const entry = tagCounts.get(tag);
+      if (entry) entry.count = Math.max(0, entry.count - 1);
+    }
+    for (const tag of next.tags) {
+      const entry = tagCounts.get(tag);
+      if (entry) entry.count += 1;
+      else tagCounts.set(tag, { tag, count: 1, titles: after ? [after.title] : [] });
+    }
+
+    return {
+      counts: {
+        total: Math.max(0, summary.counts.total - previous.total + next.total),
+        favorites: Math.max(
+          0,
+          summary.counts.favorites - previous.favorites + next.favorites,
+        ),
+        pinned: Math.max(0, summary.counts.pinned - previous.pinned + next.pinned),
+        archived: Math.max(
+          0,
+          summary.counts.archived - previous.archived + next.archived,
+        ),
+        trashed: Math.max(
+          0,
+          summary.counts.trashed - previous.trashed + next.trashed,
+        ),
+        words: Math.max(0, summary.counts.words - previous.words + next.words),
+      },
+      categories,
+      tags: [...tagCounts.values()]
+        .filter((entry) => entry.count > 0)
+        .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag)),
+    };
+  });
 }
 
 /** Prepends a new note to the first page of every cached list. */
 function prependToCaches(client: QueryClient, note: Note) {
-  client.setQueriesData<NoteFeed>({ queryKey: queryKeys.notes.lists() }, (feed) =>
-    feed
-      ? {
-          ...feed,
-          pages: feed.pages.map((page, index) =>
-            index === 0 ? { ...page, notes: [note, ...page.notes] } : page,
-          ),
-        }
-      : feed,
-  );
+  reconcileNoteCaches(client, note);
 }
 
 /**
@@ -160,17 +321,18 @@ export function useNoteActions() {
   const select = useNotesStore((state) => state.select);
 
   const snapshot = () =>
-    client.getQueriesData<NoteFeed>({ queryKey: queryKeys.notes.lists() });
+    client.getQueriesData({ queryKey: queryKeys.notes.all }) as Array<
+      [QueryKey, unknown]
+    >;
 
   const restore = (previous: ReturnType<typeof snapshot>) => {
-    for (const [key, feed] of previous) client.setQueryData(key, feed);
+    for (const [key, data] of previous) client.setQueryData(key, data);
   };
 
   const settle = () => {
-    void client.invalidateQueries({ queryKey: queryKeys.notes.lists() });
-    void client.invalidateQueries({ queryKey: queryKeys.notes.summary() });
-    // A title change makes every `[[link]]` resolve differently.
-    void client.invalidateQueries({ queryKey: queryKeys.notes.titles() });
+    // Includes feeds, details, due notes, search, links, history and summaries.
+    void client.invalidateQueries({ queryKey: queryKeys.notes.all });
+    void client.invalidateQueries({ queryKey: queryKeys.account.all });
   };
 
   const create = useMutation({
@@ -185,6 +347,7 @@ export function useNoteActions() {
         }),
       }),
     onSuccess: (note) => {
+      transitionSummary(client, null, note);
       prependToCaches(client, note);
       client.setQueryData(queryKeys.notes.detail(note.id), note);
       select(note.id);
@@ -201,12 +364,16 @@ export function useNoteActions() {
         queueWhenOffline: true,
       }),
     async onMutate({ id, patch }) {
-      await client.cancelQueries({ queryKey: queryKeys.notes.lists() });
+      await client.cancelQueries({ queryKey: queryKeys.notes.all });
       const previous = snapshot();
       patchCaches(client, id, { ...patch, updatedAt: new Date().toISOString() });
       return { previous };
     },
     onError: (_error, _variables, context) => context && restore(context.previous),
+    onSuccess: (note) => {
+      reconcileNoteCaches(client, note);
+      client.setQueryData(queryKeys.notes.detail(note.id), note);
+    },
     onSettled: settle,
   });
 
@@ -222,7 +389,9 @@ export function useNoteActions() {
         }),
       }),
     onSuccess: (note) => {
+      transitionSummary(client, null, note);
       prependToCaches(client, note);
+      client.setQueryData(queryKeys.notes.detail(note.id), note);
       select(note.id);
     },
     onSettled: settle,
@@ -234,16 +403,29 @@ export function useNoteActions() {
         method: "DELETE",
       }),
     async onMutate({ id, permanent }) {
-      await client.cancelQueries({ queryKey: queryKeys.notes.lists() });
+      await client.cancelQueries({ queryKey: queryKeys.notes.all });
       const previous = snapshot();
+      const previousSelectedId = useNotesStore.getState().selectedId;
+      const current = cachedNotes(client).get(id) ?? null;
 
-      if (permanent) removeFromCaches(client, [id]);
+      if (permanent) {
+        transitionSummary(client, current, null);
+        removeFromCaches(client, [id]);
+      }
       else patchCaches(client, id, { deletedAt: new Date().toISOString() });
 
       if (useNotesStore.getState().selectedId === id) select(null);
-      return { previous };
+      return { previous, previousSelectedId };
     },
-    onError: (_error, _variables, context) => context && restore(context.previous),
+    onError: (_error, _variables, context) => {
+      if (!context) return;
+      restore(context.previous);
+      select(context.previousSelectedId);
+    },
+    onSuccess: (note, { id, permanent }) => {
+      if (permanent || !note) removeFromCaches(client, [id]);
+      else reconcileNoteCaches(client, note);
+    },
     onSettled: settle,
   });
 
@@ -254,12 +436,16 @@ export function useNoteActions() {
         body: JSON.stringify({ deletedAt: null }),
       }),
     async onMutate(id) {
-      await client.cancelQueries({ queryKey: queryKeys.notes.lists() });
+      await client.cancelQueries({ queryKey: queryKeys.notes.all });
       const previous = snapshot();
       patchCaches(client, id, { deletedAt: null });
       return { previous };
     },
     onError: (_error, _id, context) => context && restore(context.previous),
+    onSuccess: (note) => {
+      reconcileNoteCaches(client, note);
+      client.setQueryData(queryKeys.notes.detail(note.id), note);
+    },
     onSettled: settle,
   });
 
@@ -270,8 +456,12 @@ export function useNoteActions() {
         body: JSON.stringify({ action, ids }),
       }),
     async onMutate({ action, ids }) {
-      await client.cancelQueries({ queryKey: queryKeys.notes.lists() });
+      await client.cancelQueries({ queryKey: queryKeys.notes.all });
       const previous = snapshot();
+      const previousSelection = {
+        selectMode: useNotesStore.getState().selectMode,
+        selectedIds: new Set(useNotesStore.getState().selectedIds),
+      };
 
       const patch: Partial<Note> | null =
         action === "archive"
@@ -293,18 +483,41 @@ export function useNoteActions() {
                         : null;
 
       if (patch) for (const id of ids) patchCaches(client, id, patch);
-      if (action === "purge") removeFromCaches(client, ids);
+      if (action === "purge") {
+        const current = cachedNotes(client);
+        for (const id of ids) transitionSummary(client, current.get(id) ?? null, null);
+        removeFromCaches(client, ids);
+      }
       if (action === "emptyTrash") {
-        const trashed = [...cachedNotes(client).values()]
+        const current = cachedNotes(client);
+        const trashed = [...current.values()]
           .filter((note) => note.deletedAt)
           .map((note) => note.id);
+        for (const id of trashed) transitionSummary(client, current.get(id) ?? null, null);
+        client.setQueryData<Summary>(queryKeys.notes.summary(), (summary) =>
+          summary
+            ? { ...summary, counts: { ...summary.counts, trashed: 0 } }
+            : summary,
+        );
         removeFromCaches(client, trashed);
       }
 
       useNotesStore.getState().clearSelection();
-      return { previous };
+      return { previous, previousSelection };
     },
-    onError: (_error, _variables, context) => context && restore(context.previous),
+    onError: (_error, _variables, context) => {
+      if (!context) return;
+      restore(context.previous);
+      useNotesStore.setState(context.previousSelection);
+    },
+    onSuccess: (result) => {
+      if (Array.isArray(result)) {
+        for (const note of result) {
+          reconcileNoteCaches(client, note);
+          client.setQueryData(queryKeys.notes.detail(note.id), note);
+        }
+      }
+    },
     onSettled: settle,
   });
 

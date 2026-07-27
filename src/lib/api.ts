@@ -2,6 +2,7 @@
 
 import { queueRequest } from "./outbox";
 import { refreshAuthSession } from "@/store/auth-store";
+import { publishMutation } from "./realtime";
 
 export class ApiError extends Error {
   constructor(
@@ -63,6 +64,7 @@ export async function api<T>(
     throw new ApiError(body.error ?? response.statusText, response.status);
   }
 
+  if (method !== "GET" && method !== "HEAD") publishMutation(path);
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }

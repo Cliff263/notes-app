@@ -5,6 +5,7 @@ import { AppChrome } from "@/components/app-chrome";
 import { AuthStateSync } from "@/components/auth/auth-state-sync";
 import { MotionProvider } from "@/components/motion/motion-provider";
 import { QueryProvider } from "@/components/query-provider";
+import { RealtimeSync } from "@/components/realtime-sync";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
@@ -79,6 +80,7 @@ export default function RootLayout({
         >
           <QueryProvider>
             <AuthStateSync />
+            <RealtimeSync />
             <ThemeProvider>
               <MotionProvider>
                 {children}
