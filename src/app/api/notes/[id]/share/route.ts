@@ -6,10 +6,16 @@ import { createShareToken, expiryFor, shareUrl } from "@/lib/share";
 
 type Params = { params: Promise<{ id: string }> };
 
-function serialize(row: { token: string; expiresAt: Date | null; createdAt: Date }) {
+function serialize(row: {
+  token: string;
+  expiresAt: Date | null;
+  createdAt: Date;
+  allowEdit: boolean;
+}) {
   return {
     url: shareUrl(row.token),
     token: row.token,
+    allowEdit: row.allowEdit,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
@@ -63,6 +69,7 @@ export async function POST(request: Request, { params }: Params) {
         noteId: id,
         userId,
         token: createShareToken(),
+        allowEdit: Boolean(body.allowEdit),
         expiresAt: expiryFor(body.duration),
       })
       .returning();

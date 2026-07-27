@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MarkdownPreview } from "@/components/notes/markdown-preview";
+import { SharedEditor } from "@/components/notes/shared-editor";
 import { resolveShare } from "@/lib/share";
 import { longDateTime, readingTime, stripMarkdown, wordCount } from "@/lib/utils";
 
@@ -37,7 +38,7 @@ export default async function SharedNotePage({ params }: Params) {
     <main className="mx-auto min-h-dvh w-full max-w-[760px] px-5 py-10 sm:px-8 sm:py-16">
       <header className="border-b border-line pb-5">
         <p className="text-[11px] uppercase tracking-[0.14em] text-muted-2">
-          Shared note
+          {found.share.allowEdit ? "Shared note · you can edit this" : "Shared note"}
         </p>
         <h1 className="mt-2 text-[26px] font-semibold leading-tight tracking-tight">
           {note.title || "Untitled note"}
@@ -61,17 +62,29 @@ export default async function SharedNotePage({ params }: Params) {
         )}
       </header>
 
-      <article className="py-7">
-        {/* Read-only: no toggle handler, so the checkboxes render as glyphs. */}
-        <MarkdownPreview source={note.content} shareToken={token} />
-      </article>
+      {found.share.allowEdit ? (
+        <div className="py-5">
+          <SharedEditor
+            token={token}
+            initialTitle={note.title}
+            initialContent={note.content}
+          />
+        </div>
+      ) : (
+        <article className="py-7">
+          {/* Read-only: no toggle handler, so the checkboxes render as glyphs. */}
+          <MarkdownPreview source={note.content} shareToken={token} />
+        </article>
+      )}
 
-      <footer className="border-t border-line pt-5 text-[11px] text-muted-2">
+      <footer className="border-t border-line pt-5 text-[11px] leading-relaxed text-muted-2">
         Shared from{" "}
         <Link href="/" className="text-glow-2 underline underline-offset-2">
           Square Notes
         </Link>
         . The owner can withdraw this link at any time.
+        {found.share.allowEdit &&
+          " Your changes are saved to their workspace and kept in the note's history."}
       </footer>
     </main>
   );

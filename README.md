@@ -34,7 +34,7 @@ survive a refresh:
 | `/tags/[tag]` | Notes carrying that tag |
 | `/calendar` | Month, week, day and agenda views, plus what's upcoming |
 | `/settings` | Profile, appearance, export, account |
-| `/s/[token]` | A shared note, readable without an account |
+| `/s/[token]` | A shared note — readable, and editable if the link says so — without an account |
 
 A new note inherits the view you create it from — from `/category/work` it lands
 in Work, from `/tags/react` it arrives already tagged `#react`.
@@ -65,11 +65,44 @@ in Work, from `/tags/react` it arrives already tagged `#react`.
   shows a line-by-line diff against the note as it stands, and restores any
   version — restoring is itself an edit, so nothing is lost by trying it.
 - ⋯ → **Share a link** publishes the note at `/s/<token>`. Anyone with the link
-  can read it without an account, and only read it: there is no editor on that
-  page. Links can expire after a day, a week or a month, and "Stop sharing"
-  withdraws one immediately. Each note has at most one link, so revoking is
-  never a question of which link you meant. Shared pages are marked `noindex`,
-  and images inside a shared note are served against the same token.
+  can open it without an account. Links can expire after a day, a week or a
+  month, and "Stop sharing" withdraws one immediately. Each note has at most one
+  link, so revoking is never a question of which link you meant. Shared pages
+  are marked `noindex`, and images inside a shared note are served against the
+  same token.
+- Tick **Let them edit it too** and the link carries an editor as well. See
+  below for what that actually does.
+
+**Editing together**
+
+Two people on the same editable link edit the same note at the same time, and
+see each other's keystrokes as they happen. Underneath:
+
+- The document is a CRDT (Yjs), so edits merge rather than overwrite, and each
+  keystroke is sent as the smallest change that explains it rather than as the
+  whole note.
+- The connection is peer to peer over WebRTC. A signalling server introduces the
+  two browsers and sees nothing but that introduction — no note content passes
+  through it. The room is named after the **share token**, never the note's id,
+  so no internal identifier is broadcast anywhere.
+- Presence shows who else is on the page. Remote carets are not drawn: a plain
+  textarea has no way to position them, and a mirrored overlay would cost more
+  in fragility than it returns.
+- **Saving does not depend on any of this.** Both sides write through ordinary
+  requests — the owner through the notes API, the guest through the share's own
+  endpoint — so if signalling is unreachable, editing carries on, the page says
+  "Editing on your own", and nothing is lost. Live sync is the nice part;
+  durability is the part that has to hold.
+- Everything a guest writes goes into the note's version history like any other
+  edit, so an unwelcome change can be found and rolled back.
+
+Point `NEXT_PUBLIC_YJS_SIGNALING` at your own signalling server if you would
+rather not use the public one. `y-webrtc` ships one:
+
+```bash
+node node_modules/y-webrtc/bin/server.js --port 4444
+# then NEXT_PUBLIC_YJS_SIGNALING="ws://127.0.0.1:4444"
+```
 
 **Search**
 
@@ -213,6 +246,7 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | no | The public key again, this time where the browser can read it |
 | `VAPID_SUBJECT` | no | A `mailto:` the push service can contact you at |
 | `CRON_SECRET` | no | Shared secret the reminder job must present. Unset, that endpoint answers 503 and reminders are never sent |
+| `NEXT_PUBLIC_YJS_SIGNALING` | no | Comma-separated signalling servers for collaborative editing. Defaults to a public one |
 
 Leave the Google variables unset and the "Continue with Google" button simply
 doesn't render — email/password still works.
@@ -229,8 +263,8 @@ npm run db:push
 Run this again after pulling changes that add columns or tables. Everything so
 far has been additive: `notes.deletedAt`, `notes.dueAt` and `events.noteId` for
 trash, due dates and note-to-event links, then the `noteVersion`, `noteShare`
-and `attachment` tables for history, sharing and files, and most recently
-`events.recurrence` and the `pushSubscription` table for repeats and reminders.
+and `attachment` tables for history, sharing and files, then `events.recurrence`
+and the `pushSubscription` table for repeats and reminders.
 
 `db:push` finishes by running `db:extras`, which adds what a Drizzle schema
 cannot describe — today that is the GIN index behind full-text search, built
@@ -284,8 +318,10 @@ Then `npm run db:push` as usual.
 - Reset and confirmation tokens are stored only as hashes, expire, and are
   single-use.
 - Share tokens are 32 random bytes and *are* stored as written, because unlike a
-  reset link they are meant to be copied again tomorrow. They grant read access
-  to one note and nothing else, and public reads are rate limited.
+  reset link they are meant to be copied again tomorrow. They grant access to
+  one note and nothing else — and only editing if the link was created that way,
+  which the write endpoint checks on every request. Public reads and writes are
+  both rate limited.
 - Attachments are accepted only from a fixed list of types, so nothing a browser
   would execute can be stored. Everything but an image is served as a download
   rather than inline, with `X-Content-Type-Options: nosniff`.
@@ -302,6 +338,10 @@ runs cannot contaminate each other. It signs in once and reuses the session.
 Point it at an already-running server with `E2E_BASE_URL`, and at a
 pre-installed browser with `PLAYWRIGHT_CHROMIUM_PATH`.
 
+One test is skipped unless you ask for it: two browsers converging on the same
+note needs a signalling server to introduce them. Start one, point
+`NEXT_PUBLIC_YJS_SIGNALING` at it, and set `E2E_SIGNALING=1`.
+
 ## How it's organised
 
 ```
@@ -309,7 +349,7 @@ src/
   app/
     (auth)/login, (auth)/signup   Sign-in and sign-up screens
     api/                          Route handlers for notes, events, account, auth, export
-    s/[token]/                    A publicly shared note
+    s/[token]/                    A publicly shared note, read-only or editable
     favorites/, pinned/, archive/ Note views
     category/[category]/          One view per category
     tags/, tags/[tag]/            Tag index and per-tag view

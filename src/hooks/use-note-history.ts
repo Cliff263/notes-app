@@ -28,6 +28,8 @@ export function useNoteHistory(id: string | null, enabled: boolean) {
 export type Share = {
   url: string;
   token: string;
+  /** Whether holders of the link may edit, which is also what enables collab. */
+  allowEdit: boolean;
   expiresAt: string | null;
   createdAt: string;
 };
@@ -49,10 +51,10 @@ export function useShareActions(id: string) {
     client.setQueryData(queryKeys.notes.share(id), { share });
 
   const create = useMutation({
-    mutationFn: (duration: string) =>
+    mutationFn: (input: { duration: string; allowEdit: boolean }) =>
       api<{ share: Share }>(`/api/notes/${id}/share`, {
         method: "POST",
-        body: JSON.stringify({ duration }),
+        body: JSON.stringify(input),
       }),
     onSuccess: (data) => write(data.share),
   });
@@ -63,7 +65,8 @@ export function useShareActions(id: string) {
   });
 
   return {
-    share: (duration: string) => create.mutate(duration),
+    share: (duration: string, allowEdit: boolean) =>
+      create.mutate({ duration, allowEdit }),
     revoke: () => revoke.mutate(),
     working: create.isPending || revoke.isPending,
   };

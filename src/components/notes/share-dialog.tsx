@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, Copy, Globe, Link2Off, X } from "lucide-react";
+import { Check, Copy, Eye, Globe, Link2Off, PencilLine, X } from "lucide-react";
 import { useState } from "react";
 import { useShare, useShareActions } from "@/hooks/use-note-history";
 import { SHARE_DURATIONS } from "@/lib/types";
@@ -28,6 +28,7 @@ export function ShareDialog({
   const { share: publish, revoke, working } = useShareActions(noteId);
 
   const [duration, setDuration] = useState<string>("forever");
+  const [allowEdit, setAllowEdit] = useState(false);
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -81,8 +82,9 @@ export function ShareDialog({
               ) : share ? (
                 <>
                   <p className="text-[12px] leading-relaxed text-muted">
-                    Anyone with this link can read the note. They cannot edit it,
-                    and they do not need an account.
+                    {share.allowEdit
+                      ? "Anyone with this link can read and edit the note, without an account. Edits appear as they are typed when you are both on the page."
+                      : "Anyone with this link can read the note. They cannot edit it, and they do not need an account."}
                   </p>
 
                   <div className="flex items-center gap-2">
@@ -103,7 +105,22 @@ export function ShareDialog({
                     </button>
                   </div>
 
-                  <p className="text-[11px] text-muted-2">
+                  <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-2">
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5",
+                        share.allowEdit
+                          ? "border-[color-mix(in_srgb,var(--glow-1)_45%,transparent)] text-glow-1"
+                          : "border-line",
+                      )}
+                    >
+                      {share.allowEdit ? (
+                        <PencilLine className="size-2.5" />
+                      ) : (
+                        <Eye className="size-2.5" />
+                      )}
+                      {share.allowEdit ? "Can edit" : "Read only"}
+                    </span>
                     {share.expiresAt
                       ? `Stops working ${longDateTime(share.expiresAt)}`
                       : "No expiry set."}
@@ -122,8 +139,8 @@ export function ShareDialog({
               ) : (
                 <>
                   <p className="text-[12px] leading-relaxed text-muted">
-                    Create a link that anyone can open to read this note. It stays
-                    read-only, and you can withdraw it at any time.
+                    Create a link that anyone can open, with no account needed.
+                    You can withdraw it at any time.
                   </p>
 
                   <div className="flex flex-wrap gap-1.5">
@@ -144,9 +161,26 @@ export function ShareDialog({
                     ))}
                   </div>
 
+                  <label className="flex items-start gap-2 text-[12px] text-muted">
+                    <input
+                      type="checkbox"
+                      checked={allowEdit}
+                      onChange={(event) => setAllowEdit(event.target.checked)}
+                      className="mt-0.5 size-3.5 accent-[var(--glow-1)]"
+                    />
+                    <span>
+                      Let them edit it too
+                      <span className="mt-0.5 block text-[11px] text-muted-2">
+                        Edits appear as they are typed while you are both on the
+                        page, and are saved either way. Every change is kept in
+                        this note&rsquo;s history.
+                      </span>
+                    </span>
+                  </label>
+
                   <button
                     type="button"
-                    onClick={() => publish(duration)}
+                    onClick={() => publish(duration, allowEdit)}
                     disabled={working}
                     className="flex h-9 items-center gap-1.5 rounded-lg bg-btn px-3 text-[12px] font-medium text-btn-foreground transition hover:opacity-90 disabled:opacity-50"
                   >

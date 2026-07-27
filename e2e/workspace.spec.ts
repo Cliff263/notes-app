@@ -341,6 +341,134 @@ test.describe("attachments", () => {
   });
 });
 
+test.describe("collaborative sharing", () => {
+  /** Shares the open note, ticking "let them edit" first if asked to. */
+  async function shareOpenNote(page: import("@playwright/test").Page, allowEdit: boolean) {
+    await page.getByLabel("More actions").click();
+    await page.getByRole("button", { name: "Share a link" }).click();
+
+    const revoke = page.getByRole("button", { name: "Stop sharing" });
+    if (await revoke.isVisible().catch(() => false)) await revoke.click();
+
+    if (allowEdit) await page.getByText("Let them edit it too").click();
+    await page.getByRole("button", { name: "Create link" }).click();
+
+    const url = await page.locator("[data-share-url]").inputValue();
+    await page.getByLabel("Close share").click();
+    return url;
+  }
+
+  test("a read-only link gives a reader no way to change anything", async ({
+    page,
+    browser,
+  }) => {
+    await openNote(page, "Q1 Marketing Strategy");
+    const url = await shareOpenNote(page, false);
+
+    const stranger = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+    const guest = await stranger.newPage();
+
+    await guest.goto(url);
+    await expect(guest.getByText("Shared note", { exact: true })).toBeVisible();
+    await expect(guest.locator("textarea")).toHaveCount(0);
+
+    // And not through the back door either.
+    const refused = await guest.request.patch(
+      `/api/s/${url.split("/s/")[1]}`,
+      { data: { content: "not allowed" } },
+    );
+    expect(refused.status()).toBe(403);
+
+    await stranger.close();
+  });
+
+  test("an editable link lets a reader write, and the writing sticks", async ({
+    page,
+    browser,
+  }) => {
+    await openNote(page, "Sprint Retrospective");
+    const url = await shareOpenNote(page, true);
+
+    const stranger = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+    const guest = await stranger.newPage();
+
+    await guest.goto(url);
+    await expect(guest.getByText(/you can edit this/)).toBeVisible();
+
+    const editor = guest.locator("textarea");
+    await editor.click();
+    await guest.keyboard.press("ControlOrMeta+End");
+    await editor.pressSequentially("\n\nA line from a guest.");
+
+    // Saving is a plain request, so it does not depend on any peer connection.
+    await expect(guest.getByText("Saved")).toBeVisible({ timeout: 15_000 });
+
+    await guest.reload();
+    await expect(guest.locator("textarea")).toHaveValue(/A line from a guest\./);
+
+    // The owner's history has it too, so an unwelcome edit can be undone.
+    await page.reload();
+    await openNote(page, "Sprint Retrospective");
+    await page.getByLabel("More actions").click();
+    await page.getByRole("button", { name: "Version history" }).click();
+    await expect(page.getByText("Compared with the note as it is now")).toBeVisible();
+
+    await stranger.close();
+  });
+
+  test("an unknown token cannot be written to", async ({ request }) => {
+    const response = await request.patch("/api/s/not-a-real-token", {
+      data: { content: "nope" },
+    });
+    expect(response.status()).toBe(404);
+  });
+
+  /*
+   * Live sync needs a signalling server to introduce the two browsers. Run one
+   * (`node node_modules/y-webrtc/bin/server.js --port 4444`), point
+   * NEXT_PUBLIC_YJS_SIGNALING at it, and set E2E_SIGNALING=1 to include this.
+   */
+  test("two browsers editing the same note see each other's keystrokes", async ({
+    page,
+    browser,
+  }) => {
+    test.skip(!process.env.E2E_SIGNALING, "needs a signalling server");
+    test.slow();
+
+    await openNote(page, "Pasta Recipe Collection");
+    const url = await shareOpenNote(page, true);
+
+    const stranger = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+    const guest = await stranger.newPage();
+    await guest.goto(url);
+
+    const guestEditor = guest.locator("textarea");
+    const ownerEditor = page.locator('textarea[placeholder^="Start writing"]');
+    await guestEditor.waitFor();
+
+    // Both sides should notice the other has arrived.
+    await expect(guest.getByText("2 editing")).toBeVisible({ timeout: 20_000 });
+
+    await guestEditor.click();
+    await guest.keyboard.press("ControlOrMeta+End");
+    await guestEditor.pressSequentially("\n\nTyped by the guest.");
+    await expect(ownerEditor).toHaveValue(/Typed by the guest\./, { timeout: 20_000 });
+
+    await ownerEditor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await ownerEditor.pressSequentially("\n\nTyped by the owner.");
+    await expect(guestEditor).toHaveValue(/Typed by the owner\./, { timeout: 20_000 });
+
+    await stranger.close();
+  });
+});
+
 test.describe("calendar views", () => {
   test("each view has its own URL and heading", async ({ page }) => {
     await page.goto("/calendar");

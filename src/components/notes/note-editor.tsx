@@ -38,7 +38,7 @@ import {
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { ALLOWED_MIME, attachmentMarkdown, isImageMime } from "@/lib/attachments";
 import { continuationFor, toggleTask, wikiLinkQueryAt } from "@/lib/markdown";
@@ -56,7 +56,10 @@ import {
 } from "@/lib/utils";
 import { Stagger, StaggerItem } from "@/components/motion";
 import { useEvents, useEventActions } from "@/hooks/use-events";
+import { useCollab } from "@/hooks/use-collab";
 import { useBacklinks, useNoteTitles } from "@/hooks/use-note-links";
+import { useShare } from "@/hooks/use-note-history";
+import { Presence } from "./presence";
 import { useNote, useNoteActions, useNoteAutosave } from "@/hooks/use-notes";
 const MarkdownPreview = dynamic(
   () => import("./markdown-preview").then((m) => m.MarkdownPreview),
@@ -149,9 +152,15 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
    */
   const [content, setContent] = useState(note.content);
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   function writeContent(next: string) {
     setContent(next);
     updateNote(note.id, { content: next });
+    // A no-op unless this note is in a room with someone. `collab` is declared
+    // below; this is a hoisted function declaration, so it only reads it when
+    // called, which is always after that point.
+    collab.publish(next);
   }
 
   const [tagDraft, setTagDraft] = useState("");
@@ -170,6 +179,38 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
 
   const { titles, byTitle } = useNoteTitles();
   const { data: backlinks = [] } = useBacklinks(note.id, Boolean(note.title.trim()));
+
+  /*
+   * Whether this note is shared, and on what terms. Two small columns, cached
+   * for a minute — the cost of knowing whether to open a peer connection.
+   */
+  const { data: share } = useShare(note.id, true);
+
+  /** Someone else's edit: take their text, and carry our caret across it. */
+  const onRemoteText = useCallback(
+    (next: string, moveCaret: (caret: number) => number) => {
+      const field = textareaRef.current;
+      const caret = field ? moveCaret(field.selectionStart) : 0;
+
+      setContent(next);
+      // The cache follows too, so the card list and the counts stay honest.
+      updateNote(note.id, { content: next }, 0);
+
+      if (field && document.activeElement === field) {
+        requestAnimationFrame(() => field.setSelectionRange(caret, caret));
+      }
+    },
+    [note.id, updateNote],
+  );
+
+  const collab = useCollab({
+    // Only a link that grants editing opens a room at all.
+    token: share?.allowEdit ? share.token : null,
+    name: "Owner",
+    seed: content,
+    onRemoteText,
+  });
+
 
   const suggestions = (() => {
     if (!linkMenu) return [];
@@ -191,7 +232,6 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const linkedEvents = events.filter((event) => event.noteId === note.id);
   const scheduled = linkedEvents.length > 0;
   const menuRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   /** Wraps the selection, or drops the markers in place for typing between. */
@@ -715,10 +755,13 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3">
-        <p className="text-[11px] text-muted-2">
-          Updated {longDateTime(note.updatedAt)} · {wordCount(content)} words ·{" "}
-          {readingTime(content)} min read
-        </p>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <p className="text-[11px] text-muted-2">
+            Updated {longDateTime(note.updatedAt)} · {wordCount(content)} words ·{" "}
+            {readingTime(content)} min read
+          </p>
+          <Presence status={collab.status} peers={collab.peers} />
+        </div>
 
         <div className="flex items-center gap-1 rounded-lg border border-line p-0.5">
           {(["write", "preview"] as const).map((value) => (
