@@ -6,6 +6,7 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
+import { PasswordField } from "@/components/auth/password-field";
 
 type Mode = "login" | "signup";
 
@@ -115,14 +116,12 @@ export function AuthForm({
           required
         />
 
-        <Field
+        <PasswordField
           label="Password"
-          type="password"
           value={password}
           onChange={setPassword}
           placeholder={mode === "signup" ? "At least 8 characters" : "••••••••"}
           autoComplete={mode === "signup" ? "new-password" : "current-password"}
-          required
         />
 
         {mode === "login" && (

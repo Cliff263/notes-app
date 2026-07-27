@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { PasswordField } from "@/components/auth/password-field";
 
 export default function ResetPage() {
   const params = useParams<{ token: string }>();
@@ -64,32 +65,22 @@ export default function ResetPage() {
       subtitle="Pick something you haven't used elsewhere."
     >
       <form onSubmit={handleSubmit} className="space-y-3.5">
-        <label className="block">
-          <span className="mb-1.5 block text-[12px] text-muted">New password</span>
-          <input
-            type="password"
-            required
-            autoFocus
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="At least 8 characters"
-            className="field h-10 w-full rounded-lg border border-line bg-input px-3 transition focus:border-line-strong"
-          />
-        </label>
+        <PasswordField
+          label="New password"
+          value={password}
+          onChange={setPassword}
+          placeholder="At least 8 characters"
+          autoComplete="new-password"
+          autoFocus
+        />
 
-        <label className="block">
-          <span className="mb-1.5 block text-[12px] text-muted">Confirm password</span>
-          <input
-            type="password"
-            required
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(event) => setConfirm(event.target.value)}
-            placeholder="Type it again"
-            className="field h-10 w-full rounded-lg border border-line bg-input px-3 transition focus:border-line-strong"
-          />
-        </label>
+        <PasswordField
+          label="Confirm password"
+          value={confirm}
+          onChange={setConfirm}
+          placeholder="Type it again"
+          autoComplete="new-password"
+        />
 
         {error && <p className="text-[12px] text-danger">{error}</p>}
 

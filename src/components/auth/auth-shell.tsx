@@ -75,10 +75,11 @@ export function AuthShell({
   children: ReactNode;
 }) {
   return (
-    <main className="relative min-h-dvh overflow-hidden bg-[#07070a] text-white">
-      <div className="pointer-events-none absolute inset-0 grid-bg opacity-25" />
-      <div className="pointer-events-none absolute -left-40 -top-40 size-[34rem] rounded-full bg-violet-700/15 blur-[130px]" />
-      <div className="pointer-events-none absolute -bottom-52 right-[20%] size-[38rem] rounded-full bg-cyan-500/10 blur-[150px]" />
+    <main className="relative min-h-dvh overflow-hidden bg-[#070810] text-white">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_16%,rgba(124,58,237,0.18),transparent_34%),radial-gradient(circle_at_82%_76%,rgba(8,145,178,0.12),transparent_32%),linear-gradient(135deg,#090814_0%,#070910_48%,#080b12_100%)]" />
+      <div className="pointer-events-none absolute -left-[18%] top-[52%] h-40 w-[70%] -rotate-12 rounded-full bg-violet-500/[0.055] blur-[90px]" />
+      <div className="pointer-events-none absolute -right-[12%] top-[18%] h-32 w-[55%] rotate-12 rounded-full bg-cyan-300/[0.035] blur-[100px]" />
+      <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
 
       <div className="relative mx-auto grid min-h-dvh w-full max-w-[1600px] lg:grid-cols-[minmax(0,1.15fr)_minmax(430px,0.85fr)]">
         <section className="relative flex min-h-[390px] flex-col overflow-hidden border-white/10 px-6 pb-10 pt-6 sm:px-10 sm:pt-8 lg:min-h-dvh lg:border-r lg:px-14 lg:pb-12 lg:pt-10 xl:px-20">
