@@ -1,9 +1,10 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, Plus } from "lucide-react";
+import { Check, Columns3, Download, Plus, Rows3, X } from "lucide-react";
 import { Fragment } from "react";
 import { parseMarkdown, type Inline } from "@/lib/markdown";
+import { tableToCsv } from "@/lib/spreadsheet";
 import { cn } from "@/lib/utils";
 
 export type WikiLinkTarget = { id: string; title: string } | undefined;
@@ -16,6 +17,13 @@ type PreviewProps = {
   resolveLink?: (title: string) => WikiLinkTarget;
   onOpenNote?: (id: string) => void;
   onCreateNote?: (title: string) => void;
+  /** Given, tables expose spreadsheet-style cell and shape controls. */
+  onChangeTable?: (
+    line: number,
+    previousRows: number,
+    headers: string[],
+    rows: string[][],
+  ) => void;
   /**
    * On a publicly shared note the reader has no session, so the token is what
    * entitles them to the images the note embeds.
@@ -30,6 +38,7 @@ export function MarkdownPreview({
   resolveLink,
   onOpenNote,
   onCreateNote,
+  onChangeTable,
   shareToken,
 }: PreviewProps) {
   const blocks = parseMarkdown(source);
@@ -95,6 +104,19 @@ export function MarkdownPreview({
                 {block.value}
               </pre>
             );
+          case "table":
+            return (
+              <EditableTable
+                key={index}
+                headers={block.headers}
+                rows={block.rows}
+                editable={Boolean(onChangeTable)}
+                onChange={(headers, rows) =>
+                  onChangeTable?.(block.line, block.rows.length, headers, rows)
+                }
+                inline={inline}
+              />
+            );
           case "rule":
             return <hr key={index} className="border-line" />;
           default:
@@ -106,6 +128,161 @@ export function MarkdownPreview({
         }
       })}
     </div>
+  );
+}
+
+function EditableTable({
+  headers,
+  rows,
+  editable,
+  onChange,
+  inline,
+}: {
+  headers: string[];
+  rows: string[][];
+  editable: boolean;
+  onChange: (headers: string[], rows: string[][]) => void;
+  inline: Omit<Parameters<typeof InlineRun>[0], "content">;
+}) {
+  const patchCell = (row: number, column: number, value: string) => {
+    if (row === -1) {
+      onChange(headers.map((cell, index) => (index === column ? value : cell)), rows);
+      return;
+    }
+    onChange(
+      headers,
+      rows.map((cells, index) =>
+        index === row
+          ? cells.map((cell, cellIndex) => (cellIndex === column ? value : cell))
+          : cells,
+      ),
+    );
+  };
+
+  const cell = (value: string, row: number, column: number, heading = false) =>
+    editable ? (
+      <input
+        aria-label={`${heading ? "Header" : `Row ${row + 1}`} column ${column + 1}`}
+        value={value}
+        onChange={(event) => patchCell(row, column, event.target.value)}
+        className="field-sm min-w-[120px] w-full bg-transparent px-2.5 py-2 text-foreground"
+      />
+    ) : (
+      <span className="block min-w-[100px] px-2.5 py-2">
+        <InlineRun content={parseMarkdownCell(value)} {...inline} />
+      </span>
+    );
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-line">
+      <div className="overflow-x-auto scroll-thin">
+        <table className="w-full border-collapse text-left text-[12px]">
+          <thead className="bg-panel font-semibold">
+            <tr>
+              {headers.map((value, column) => (
+                <th key={column} className="border-b border-r border-line last:border-r-0">
+                  {cell(value, -1, column, true)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((cells, row) => (
+              <tr key={row} className="even:bg-panel/40">
+                {headers.map((_, column) => (
+                  <td key={column} className="border-b border-r border-line last:border-r-0">
+                    {cell(cells[column] ?? "", row, column)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {editable && (
+        <div className="flex flex-wrap items-center gap-1 border-t border-line bg-panel px-2 py-1.5">
+          <TableControl
+            label="Add row"
+            icon={Rows3}
+            onClick={() => onChange(headers, [...rows, headers.map(() => "")])}
+          />
+          <TableControl
+            label="Add column"
+            icon={Columns3}
+            onClick={() =>
+              onChange(
+                [...headers, `Column ${headers.length + 1}`],
+                rows.map((row) => [...row, ""]),
+              )
+            }
+          />
+          {rows.length > 1 && (
+            <TableControl
+              label="Remove last row"
+              icon={X}
+              onClick={() => onChange(headers, rows.slice(0, -1))}
+            />
+          )}
+          {headers.length > 1 && (
+            <TableControl
+              label="Remove last column"
+              icon={X}
+              onClick={() =>
+                onChange(
+                  headers.slice(0, -1),
+                  rows.map((row) => row.slice(0, -1)),
+                )
+              }
+            />
+          )}
+          <span className="min-w-2 flex-1" />
+          <TableControl
+            label="Download CSV"
+            icon={Download}
+            onClick={() => downloadTable(headers, rows)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function downloadTable(headers: string[], rows: string[][]) {
+  const url = URL.createObjectURL(
+    new Blob([tableToCsv(headers, rows)], { type: "text/csv;charset=utf-8" }),
+  );
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "note-table.csv";
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function parseMarkdownCell(value: string) {
+  const [block] = parseMarkdown(value);
+  return block && "content" in block
+    ? block.content
+    : [{ type: "text" as const, value }];
+}
+
+function TableControl({
+  label,
+  icon: Icon,
+  onClick,
+}: {
+  label: string;
+  icon: typeof Plus;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-muted transition hover:bg-card hover:text-foreground"
+    >
+      <Icon className="size-3" />
+      {label}
+    </button>
   );
 }
 

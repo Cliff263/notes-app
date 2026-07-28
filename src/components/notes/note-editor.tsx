@@ -40,6 +40,7 @@ import {
   Quote,
   Share2,
   Star,
+  Table2,
   Trash2,
   X,
 } from "lucide-react";
@@ -47,7 +48,13 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { ALLOWED_MIME, attachmentMarkdown, isImageMime } from "@/lib/attachments";
-import { continuationFor, toggleTask, wikiLinkQueryAt } from "@/lib/markdown";
+import {
+  continuationFor,
+  replaceTable,
+  tableToMarkdown,
+  toggleTask,
+  wikiLinkQueryAt,
+} from "@/lib/markdown";
 import { ROUTES } from "@/lib/routes";
 import { CATEGORIES, type ExportFormat, type Note } from "@/lib/types";
 import { useBreakpoint } from "@/lib/use-media-query";
@@ -76,6 +83,7 @@ import {
   shareNoteFile,
   type ShareFileFormat,
 } from "@/lib/share-targets";
+import { csvToMarkdown } from "@/lib/spreadsheet";
 import { Presence } from "./presence";
 import { useNote, useNoteActions, useNoteAutosave } from "@/hooks/use-notes";
 const MarkdownPreview = dynamic(
@@ -372,6 +380,22 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     requestAnimationFrame(() => field.focus());
   }
 
+  function insertBlock(block: string) {
+    const field = textareaRef.current;
+    if (!field) return;
+    const { selectionStart: start, selectionEnd: end, value } = field;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    const lead = before && !before.endsWith("\n") ? "\n\n" : "";
+    const tail = after && !after.startsWith("\n") ? "\n\n" : "";
+    const insert = `${lead}${block}${tail}`;
+    writeContent(`${before}${insert}${after}`);
+    requestAnimationFrame(() => {
+      field.focus();
+      field.setSelectionRange(start + insert.length, start + insert.length);
+    });
+  }
+
   /**
    * Uploads a dropped, pasted or chosen file and drops the markdown for it in
    * at the caret. Files go to the note they were dropped on, so deleting the
@@ -381,12 +405,16 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     if (!files.length) return;
     setUploading(true);
     setUploadError(null);
+    let importedSpreadsheet = false;
 
     const field = textareaRef.current;
     let next = field?.value ?? content;
     let caret = field?.selectionStart ?? next.length;
 
     for (const file of files) {
+      const importedTable =
+        file.type === "text/csv" ? csvToMarkdown(await file.text()) : "";
+      if (importedTable) importedSpreadsheet = true;
       const form = new FormData();
       form.append("file", file);
 
@@ -398,7 +426,11 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
 
         // A picture wants a line of its own; a file can sit in the sentence.
         const snippet = attachmentMarkdown(uploaded);
-        const insert = isImageMime(uploaded.mime) ? `\n${snippet}\n` : snippet;
+        const insert = isImageMime(uploaded.mime)
+          ? `\n${snippet}\n`
+          : importedTable
+            ? `\n${snippet}\n\n${importedTable}\n`
+            : snippet;
 
         next = `${next.slice(0, caret)}${insert}${next.slice(caret)}`;
         caret += insert.length;
@@ -411,6 +443,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
 
     writeContent(next);
     setUploading(false);
+    if (importedSpreadsheet) setMode("preview");
     requestAnimationFrame(() => {
       field?.focus();
       field?.setSelectionRange(caret, caret);
@@ -1025,6 +1058,23 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
             <Code className="size-3.5" />
           </FormatButton>
           <FormatButton
+            label="Insert table"
+            onClick={() => {
+              insertBlock(
+                tableToMarkdown(
+                  ["Column 1", "Column 2", "Column 3"],
+                  [
+                    ["", "", ""],
+                    ["", "", ""],
+                  ],
+                ),
+              );
+              setMode("preview");
+            }}
+          >
+            <Table2 className="size-3.5" />
+          </FormatButton>
+          <FormatButton
             label={uploading ? "Attaching…" : "Attach a file"}
             onClick={() => fileRef.current?.click()}
           >
@@ -1145,6 +1195,11 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
               resolveLink={(title) => byTitle.get(title.trim().toLowerCase())}
               onOpenNote={select}
               onCreateNote={(title) => void createNote(note.category, [], title)}
+              onChangeTable={(line, previousRows, headers, rows) =>
+                writeContent(
+                  replaceTable(content, line, previousRows, headers, rows),
+                )
+              }
             />
           </div>
         )}

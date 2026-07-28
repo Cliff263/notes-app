@@ -7,6 +7,8 @@ import {
   taskProgress,
   toggleTask,
   wikiLinkQueryAt,
+  replaceTable,
+  tableToMarkdown,
 } from "./markdown";
 
 describe("parseMarkdown", () => {
@@ -49,6 +51,31 @@ describe("parseMarkdown", () => {
     expect(blocks[1]).toMatchObject({ checked: false, line: 2 });
     expect(blocks[2]).toMatchObject({ checked: true, line: 3 });
     expect(inlineToText(blocks[1].type === "task" ? blocks[1].content : [])).toBe("todo");
+  });
+});
+
+describe("markdown tables", () => {
+  it("parses a table as one structured block", () => {
+    expect(
+      parseMarkdown("| Name | Status |\n| --- | --- |\n| Ada | Done |"),
+    ).toEqual([
+      {
+        type: "table",
+        headers: ["Name", "Status"],
+        rows: [["Ada", "Done"]],
+        line: 0,
+      },
+    ]);
+  });
+
+  it("serializes escaped cells and replaces only the selected table", () => {
+    const table = tableToMarkdown(["Item", "Cost"], [["A | B", "12"]]);
+    expect(table).toContain("A \\| B");
+    expect(
+      replaceTable(`Before\n${table}\nAfter`, 1, 1, ["Item", "Cost"], [["C", "15"]]),
+    ).toBe(
+      "Before\n| Item | Cost |\n| --- | --- |\n| C | 15 |\nAfter",
+    );
   });
 });
 

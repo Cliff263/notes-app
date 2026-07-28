@@ -145,6 +145,15 @@ its own still falls back to a substring match.
 - Linked events automatically follow changes to the note or journal title,
   content excerpt and due date
 
+**Tables, spreadsheets and attachments**
+
+- Insert an editable table from the note toolbar, then add/remove rows and
+  columns or edit individual cells in Preview
+- CSV spreadsheets are attached in their original form and imported as an
+  editable table inside the note
+- Images, PDFs, text, Markdown, Excel/OpenDocument spreadsheets, Word documents
+  and PowerPoint presentations can be attached by picker, paste or drag-and-drop
+
 **On a phone**
 
 - Sidebar becomes a drawer, a bottom tab bar replaces it, and the editor opens

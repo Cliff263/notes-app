@@ -24,6 +24,7 @@ export type Block =
   /** A checklist item. `line` is its index in the source, so it can be ticked. */
   | { type: "task"; content: Inline[]; checked: boolean; line: number }
   | { type: "quote"; content: Inline[] }
+  | { type: "table"; headers: string[]; rows: string[][]; line: number }
   | { type: "code"; value: string }
   | { type: "rule" };
 
@@ -35,6 +36,65 @@ const INLINE_PATTERN =
 
 /** `- [ ] something` / `- [x] something`, in any list marker. */
 const TASK_PATTERN = /^(\s*)([-*+])\s+\[([ xX])\]\s?(.*)$/;
+const TABLE_SEPARATOR_CELL = /^:?-{3,}:?$/;
+
+export function splitTableRow(line: string) {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const cells: string[] = [];
+  let cell = "";
+  let escaped = false;
+
+  for (const character of trimmed) {
+    if (escaped) {
+      cell += character;
+      escaped = false;
+    } else if (character === "\\") {
+      escaped = true;
+    } else if (character === "|") {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  if (escaped) cell += "\\";
+  cells.push(cell.trim());
+  return cells;
+}
+
+function isTableSeparator(line: string, columns: number) {
+  const cells = splitTableRow(line);
+  return cells.length === columns && cells.every((cell) => TABLE_SEPARATOR_CELL.test(cell));
+}
+
+function escapeTableCell(value: string) {
+  return value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+}
+
+export function tableToMarkdown(headers: string[], rows: string[][]) {
+  const width = Math.max(headers.length, 1);
+  const normalise = (cells: string[]) =>
+    Array.from({ length: width }, (_, index) => escapeTableCell(cells[index] ?? ""));
+
+  return [
+    `| ${normalise(headers).join(" | ")} |`,
+    `| ${Array.from({ length: width }, () => "---").join(" | ")} |`,
+    ...rows.map((row) => `| ${normalise(row).join(" | ")} |`),
+  ].join("\n");
+}
+
+/** Replaces one parsed table without disturbing any text around it. */
+export function replaceTable(
+  source: string,
+  line: number,
+  previousRows: number,
+  headers: string[],
+  rows: string[][],
+) {
+  const lines = source.split("\n");
+  lines.splice(line, previousRows + 2, ...tableToMarkdown(headers, rows).split("\n"));
+  return lines.join("\n");
+}
 
 export function parseInline(text: string): Inline[] {
   const out: Inline[] = [];
@@ -111,6 +171,26 @@ export function parseMarkdown(source: string): Block[] {
 
     if (!line.trim()) {
       flushParagraph();
+      continue;
+    }
+
+    const tableHeaders = line.includes("|") ? splitTableRow(line) : [];
+    if (
+      tableHeaders.length > 1 &&
+      lines[index + 1] !== undefined &&
+      isTableSeparator(lines[index + 1], tableHeaders.length)
+    ) {
+      flushParagraph();
+      const rows: string[][] = [];
+      let next = index + 2;
+      while (next < lines.length && lines[next].includes("|") && lines[next].trim()) {
+        const cells = splitTableRow(lines[next]);
+        if (cells.length !== tableHeaders.length) break;
+        rows.push(cells);
+        next += 1;
+      }
+      blocks.push({ type: "table", headers: tableHeaders, rows, line: index });
+      index = next - 1;
       continue;
     }
 

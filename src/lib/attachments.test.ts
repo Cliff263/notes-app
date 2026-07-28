@@ -24,6 +24,11 @@ describe("the allowlist", () => {
   it("accepts what it can safely serve back", () => {
     expect(isAllowedMime("image/png")).toBe(true);
     expect(isAllowedMime("application/pdf")).toBe(true);
+    expect(
+      isAllowedMime(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    ).toBe(true);
   });
 
   it("refuses anything a browser might run", () => {

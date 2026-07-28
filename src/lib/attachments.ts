@@ -19,6 +19,14 @@ export const ALLOWED_MIME: Record<string, string> = {
   "text/plain": "txt",
   "text/markdown": "md",
   "text/csv": "csv",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.oasis.opendocument.spreadsheet": "ods",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "application/vnd.oasis.opendocument.text": "odt",
 };
 
 export function isAllowedMime(mime: string) {
