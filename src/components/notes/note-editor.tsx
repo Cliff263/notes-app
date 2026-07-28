@@ -50,6 +50,7 @@ import { api, ApiError } from "@/lib/api";
 import { ALLOWED_MIME, attachmentMarkdown, isImageMime } from "@/lib/attachments";
 import {
   continuationFor,
+  parseMarkdown,
   replaceTable,
   tableToMarkdown,
   toggleTask,
@@ -349,14 +350,21 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const field = textareaRef.current;
     if (!field) return;
 
-    const { selectionStart: start, selectionEnd: end, value } = field;
+    const offset = sourceOffset(field);
+    const localStart = field.selectionStart;
+    const start = offset + field.selectionStart;
+    const end = offset + field.selectionEnd;
+    const value = content;
     const selected = value.slice(start, end);
     const next = `${value.slice(0, start)}${before}${selected}${after}${value.slice(end)}`;
 
     writeContent(next);
     requestAnimationFrame(() => {
       field.focus();
-      field.setSelectionRange(start + before.length, start + before.length + selected.length);
+      field.setSelectionRange(
+        localStart + before.length,
+        localStart + before.length + selected.length,
+      );
     });
   }
 
@@ -365,7 +373,10 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const field = textareaRef.current;
     if (!field) return;
 
-    const { selectionStart: start, selectionEnd: end, value } = field;
+    const offset = sourceOffset(field);
+    const start = offset + field.selectionStart;
+    const end = offset + field.selectionEnd;
+    const value = content;
     const lineStart = value.lastIndexOf("\n", start - 1) + 1;
     const lineEnd = value.indexOf("\n", end) === -1 ? value.length : value.indexOf("\n", end);
 
@@ -383,7 +394,11 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   function insertBlock(block: string) {
     const field = textareaRef.current;
     if (!field) return;
-    const { selectionStart: start, selectionEnd: end, value } = field;
+    const offset = sourceOffset(field);
+    const localStart = field.selectionStart;
+    const start = offset + field.selectionStart;
+    const end = offset + field.selectionEnd;
+    const value = content;
     const before = value.slice(0, start);
     const after = value.slice(end);
     const lead = before && !before.endsWith("\n") ? "\n\n" : "";
@@ -392,7 +407,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     writeContent(`${before}${insert}${after}`);
     requestAnimationFrame(() => {
       field.focus();
-      field.setSelectionRange(start + insert.length, start + insert.length);
+      field.setSelectionRange(localStart + insert.length, localStart + insert.length);
     });
   }
 
@@ -405,16 +420,16 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     if (!files.length) return;
     setUploading(true);
     setUploadError(null);
-    let importedSpreadsheet = false;
 
     const field = textareaRef.current;
-    let next = field?.value ?? content;
-    let caret = field?.selectionStart ?? next.length;
+    let next = content;
+    let caret = field
+      ? sourceOffset(field) + field.selectionStart
+      : next.length;
 
     for (const file of files) {
       const importedTable =
         file.type === "text/csv" ? csvToMarkdown(await file.text()) : "";
-      if (importedTable) importedSpreadsheet = true;
       const form = new FormData();
       form.append("file", file);
 
@@ -443,16 +458,21 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
 
     writeContent(next);
     setUploading(false);
-    if (importedSpreadsheet) setMode("preview");
     requestAnimationFrame(() => {
       field?.focus();
-      field?.setSelectionRange(caret, caret);
+      if (field) {
+        const localCaret = Math.max(0, caret - sourceOffset(field));
+        field.setSelectionRange(localCaret, localCaret);
+      }
     });
   }
 
   /** Opens or closes the link menu based on where the caret is now. */
   function syncLinkMenu(field: HTMLTextAreaElement) {
-    const found = wikiLinkQueryAt(field.value, field.selectionStart);
+    const found = wikiLinkQueryAt(
+      content,
+      sourceOffset(field) + field.selectionStart,
+    );
 
     // Only a real change is worth a render — this runs on every keystroke.
     setLinkMenu((current) => {
@@ -470,7 +490,9 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const field = textareaRef.current;
     if (!field || !linkMenu) return;
 
-    const { value, selectionStart: caret } = field;
+    const value = content;
+    const offset = sourceOffset(field);
+    const caret = offset + field.selectionStart;
     const next = `${value.slice(0, linkMenu.start)}[[${title}]]${value.slice(caret)}`;
     const caretAfter = linkMenu.start + title.length + 4;
 
@@ -478,7 +500,8 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     setLinkMenu(null);
     requestAnimationFrame(() => {
       field.focus();
-      field.setSelectionRange(caretAfter, caretAfter);
+      const localCaret = Math.max(0, caretAfter - offset);
+      field.setSelectionRange(localCaret, localCaret);
     });
   }
 
@@ -526,7 +549,8 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const caretAfter =
       continuation === "" ? lineStart + 1 : caret + 1 + continuation.length;
 
-    writeContent(next);
+    const offset = sourceOffset(field);
+    writeContent(`${content.slice(0, offset)}${next}${content.slice(offset + value.length)}`);
     requestAnimationFrame(() => {
       field.focus();
       field.setSelectionRange(caretAfter, caretAfter);
@@ -1069,7 +1093,6 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                   ],
                 ),
               );
-              setMode("preview");
             }}
           >
             <Table2 className="size-3.5" />
@@ -1105,41 +1128,49 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       <div className="relative min-h-0 flex-1 border-t border-line">
         {mode === "write" ? (
           <>
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(event) => {
-                writeContent(event.target.value);
-                syncLinkMenu(event.currentTarget);
-              }}
-              onKeyUp={(event) => syncLinkMenu(event.currentTarget)}
-              onClick={(event) => syncLinkMenu(event.currentTarget)}
-              onBlur={() => setLinkMenu(null)}
-              onKeyDown={handleKeyDown}
-              /*
-               * Pasting a screenshot and dropping a file are the two ways
-               * anyone actually attaches anything; the toolbar button is the
-               * fallback for a keyboard.
-               */
-              onPaste={(event) => {
-                const files = [...event.clipboardData.files];
-                if (!files.length) return;
-                event.preventDefault();
-                void uploadFiles(files);
-              }}
-              onDragOver={(event) => {
-                if (event.dataTransfer.types.includes("Files")) event.preventDefault();
-              }}
-              onDrop={(event) => {
-                const files = [...event.dataTransfer.files];
-                if (!files.length) return;
-                event.preventDefault();
-                void uploadFiles(files);
-              }}
-              placeholder="Start writing... markdown works here"
-              spellCheck={false}
-              className="field h-full w-full resize-none bg-transparent px-4 py-4 leading-[1.75] text-foreground scroll-thin"
-            />
+            {parseMarkdown(content).some((block) => block.type === "table") ? (
+              <HybridWriteEditor
+                source={content}
+                activeRef={textareaRef}
+                onChange={writeContent}
+                onKeyDown={handleKeyDown}
+                onSyncLinks={syncLinkMenu}
+                onBlur={() => setLinkMenu(null)}
+                onFiles={(files) => void uploadFiles(files)}
+              />
+            ) : (
+              <textarea
+                ref={textareaRef}
+                data-source-offset="0"
+                value={content}
+                onChange={(event) => {
+                  writeContent(event.target.value);
+                  syncLinkMenu(event.currentTarget);
+                }}
+                onKeyUp={(event) => syncLinkMenu(event.currentTarget)}
+                onClick={(event) => syncLinkMenu(event.currentTarget)}
+                onBlur={() => setLinkMenu(null)}
+                onKeyDown={handleKeyDown}
+                onPaste={(event) => {
+                  const files = [...event.clipboardData.files];
+                  if (!files.length) return;
+                  event.preventDefault();
+                  void uploadFiles(files);
+                }}
+                onDragOver={(event) => {
+                  if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  const files = [...event.dataTransfer.files];
+                  if (!files.length) return;
+                  event.preventDefault();
+                  void uploadFiles(files);
+                }}
+                placeholder="Start writing... markdown works here"
+                spellCheck={false}
+                className="field h-full w-full resize-none bg-transparent px-4 py-4 leading-[1.75] text-foreground scroll-thin"
+              />
+            )}
 
             {/*
               Anchored to the pane rather than the caret: no measuring, and it
@@ -1266,6 +1297,149 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
         />
       )}
     </motion.div>
+  );
+}
+
+function sourceOffset(field: HTMLTextAreaElement) {
+  return Number(field.dataset.sourceOffset) || 0;
+}
+
+type HybridSegment =
+  | { type: "text"; value: string; start: number; end: number }
+  | {
+      type: "table";
+      line: number;
+      headers: string[];
+      rows: string[][];
+    };
+
+function hybridSegments(source: string): HybridSegment[] {
+  const lines = source.split("\n");
+  const starts: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    starts.push(offset);
+    offset += line.length + 1;
+  }
+
+  const tables = parseMarkdown(source).filter(
+    (block): block is Extract<ReturnType<typeof parseMarkdown>[number], { type: "table" }> =>
+      block.type === "table",
+  );
+
+  const segments: HybridSegment[] = [];
+  let cursor = 0;
+  for (const table of tables) {
+    const start = starts[table.line] ?? source.length;
+    const nextLine = table.line + table.rows.length + 2;
+    const end = starts[nextLine] ?? source.length;
+    if (start > cursor) {
+      segments.push({ type: "text", value: source.slice(cursor, start), start: cursor, end: start });
+    }
+    segments.push({
+      type: "table",
+      line: table.line,
+      headers: table.headers,
+      rows: table.rows,
+    });
+    cursor = end;
+  }
+
+  if (cursor < source.length || !segments.length || segments.at(-1)?.type === "table") {
+    segments.push({
+      type: "text",
+      value: source.slice(cursor),
+      start: cursor,
+      end: source.length,
+    });
+  }
+  return segments;
+}
+
+function HybridWriteEditor({
+  source,
+  activeRef,
+  onChange,
+  onKeyDown,
+  onSyncLinks,
+  onBlur,
+  onFiles,
+}: {
+  source: string;
+  activeRef: React.RefObject<HTMLTextAreaElement | null>;
+  onChange: (source: string) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSyncLinks: (field: HTMLTextAreaElement) => void;
+  onBlur: () => void;
+  onFiles: (files: File[]) => void;
+}) {
+  const segments = hybridSegments(source);
+
+  return (
+    <div className="h-full overflow-y-auto py-2 scroll-thin">
+      {segments.map((segment, index) =>
+        segment.type === "table" ? (
+          <div key={`table-${index}`} className="px-4 py-2">
+            <MarkdownPreview
+              source={tableToMarkdown(segment.headers, segment.rows)}
+              onChangeTable={(_line, previousRows, headers, rows) =>
+                onChange(
+                  replaceTable(source, segment.line, previousRows, headers, rows),
+                )
+              }
+            />
+          </div>
+        ) : (
+          <textarea
+            key={`text-${index}`}
+            ref={(element) => {
+              if (
+                element &&
+                (!activeRef.current || !activeRef.current.isConnected)
+              ) {
+                activeRef.current = element;
+              }
+            }}
+            data-source-offset={segment.start}
+            value={segment.value}
+            rows={Math.max(3, segment.value.split("\n").length)}
+            onFocus={(event) => {
+              activeRef.current = event.currentTarget;
+            }}
+            onChange={(event) => {
+              onChange(
+                `${source.slice(0, segment.start)}${event.target.value}${source.slice(
+                  segment.end,
+                )}`,
+              );
+              onSyncLinks(event.currentTarget);
+            }}
+            onKeyUp={(event) => onSyncLinks(event.currentTarget)}
+            onClick={(event) => onSyncLinks(event.currentTarget)}
+            onBlur={onBlur}
+            onKeyDown={onKeyDown}
+            onPaste={(event) => {
+              const files = [...event.clipboardData.files];
+              if (!files.length) return;
+              event.preventDefault();
+              onFiles(files);
+            }}
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              const files = [...event.dataTransfer.files];
+              if (!files.length) return;
+              event.preventDefault();
+              onFiles(files);
+            }}
+            placeholder={index === 0 ? "Start writing... markdown works here" : "Continue writing…"}
+            spellCheck={false}
+            className="field block min-h-[72px] w-full resize-none overflow-hidden bg-transparent px-4 py-2 leading-[1.75] text-foreground"
+          />
+        ),
+      )}
+    </div>
   );
 }
 
