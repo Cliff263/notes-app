@@ -553,6 +553,15 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       ? sourceOffset(field) + field.selectionStart
       : next.length;
 
+    const uploadThroughApp = async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api<{ id: string; filename: string; mime: string }>(
+        `/api/notes/${note.id}/attachments`,
+        { method: "POST", body: form },
+      );
+    };
+
     for (const file of files) {
       const mime = attachmentMime(file.type, file.name);
       const importedTable =
@@ -583,21 +592,21 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
             method: "PUT",
             headers: { "Content-Type": mime },
             body: file,
-          });
-          if (!response.ok) {
+          }).catch(() => null);
+
+          if (response?.ok) {
+            uploaded = prepared.attachment;
+          } else {
+            // A missing R2 CORS rule prevents the browser PUT before it reaches
+            // the bucket. Remove the reserved row and retry through our
+            // same-origin API so ordinary documents can still be attached.
             await fetch(`/api/attachments/${prepared.attachment.id}`, {
               method: "DELETE",
             });
-            throw new Error("Cloudflare R2 rejected the upload");
+            uploaded = await uploadThroughApp(file);
           }
-          uploaded = prepared.attachment;
         } else {
-          const form = new FormData();
-          form.append("file", file);
-          uploaded = await api<{ id: string; filename: string; mime: string }>(
-            `/api/notes/${note.id}/attachments`,
-            { method: "POST", body: form },
-          );
+          uploaded = await uploadThroughApp(file);
         }
 
         // A picture wants a line of its own; a file can sit in the sentence.

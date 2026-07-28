@@ -281,7 +281,10 @@ CORS policy to the bucket, replacing the origins with the app's real addresses:
 ```json
 [
   {
-    "AllowedOrigins": ["http://localhost:3000", "https://your-app.example"],
+    "AllowedOrigins": [
+      "http://localhost:3000",
+      "https://notes-app-three-bay.vercel.app"
+    ],
     "AllowedMethods": ["PUT"],
     "AllowedHeaders": ["Content-Type"],
     "ExposeHeaders": ["ETag"],
@@ -289,6 +292,11 @@ CORS policy to the bucket, replacing the origins with the app's real addresses:
   }
 ]
 ```
+
+The production origin must match exactly: include `https://`, omit paths, and do
+not add a trailing slash. Small files retry through the application API when a
+browser upload is blocked, but large files still require this rule because
+Vercel limits the size of proxied request bodies.
 
 The bucket itself stays private and needs no custom domain. Without complete R2
 credentials, local development falls back to Postgres and keeps the smaller
