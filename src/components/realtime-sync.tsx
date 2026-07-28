@@ -15,6 +15,8 @@ export function RealtimeSync() {
         if (path.startsWith("/api/notes") || path.startsWith("/api/s/")) {
           void client.invalidateQueries({ queryKey: queryKeys.notes.all });
           void client.invalidateQueries({ queryKey: queryKeys.account.all });
+          // Note edits can also update events linked from that note.
+          void client.invalidateQueries({ queryKey: queryKeys.events.all });
         }
         if (path.startsWith("/api/events")) {
           void client.invalidateQueries({ queryKey: queryKeys.events.all });

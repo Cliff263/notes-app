@@ -40,14 +40,29 @@ import {
   Quote,
   Share2,
   Star,
+  Table2,
   Trash2,
+  Redo2,
+  Undo2,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { ALLOWED_MIME, attachmentMarkdown, isImageMime } from "@/lib/attachments";
-import { continuationFor, toggleTask, wikiLinkQueryAt } from "@/lib/markdown";
+import {
+  ALLOWED_MIME,
+  attachmentMime,
+  attachmentMarkdown,
+  isImageMime,
+} from "@/lib/attachments";
+import {
+  continuationFor,
+  parseMarkdown,
+  replaceTable,
+  tableToMarkdown,
+  toggleTask,
+  wikiLinkQueryAt,
+} from "@/lib/markdown";
 import { ROUTES } from "@/lib/routes";
 import { CATEGORIES, type ExportFormat, type Note } from "@/lib/types";
 import { useBreakpoint } from "@/lib/use-media-query";
@@ -71,8 +86,14 @@ import {
   useShareActions,
   type Share,
 } from "@/hooks/use-note-history";
-import { emailShareUrl, whatsappShareUrl } from "@/lib/share-targets";
+import {
+  SHARE_FILE_FORMATS,
+  shareNoteFile,
+  type ShareFileFormat,
+} from "@/lib/share-targets";
+import { csvToMarkdown } from "@/lib/spreadsheet";
 import { Presence } from "./presence";
+import { AttachmentCard } from "./attachment-card";
 import { useNote, useNoteActions, useNoteAutosave } from "@/hooks/use-notes";
 const MarkdownPreview = dynamic(
   () => import("./markdown-preview").then((m) => m.MarkdownPreview),
@@ -168,16 +189,92 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
    * The component is keyed by note id, so switching notes starts a fresh draft.
    */
   const [content, setContent] = useState(note.content);
+  const contentRef = useRef(note.content);
+  const undoStackRef = useRef<string[]>([]);
+  const redoStackRef = useRef<string[]>([]);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  function writeContent(next: string) {
+  function writeContent(
+    next: string,
+    change: "typing" | "structural" | "history" = "structural",
+  ) {
+    const current = contentRef.current;
+    if (next === current) return;
+
+    if (change !== "history") {
+      const continuesTyping =
+        change === "typing" && typingTimerRef.current !== null;
+      if (!continuesTyping) {
+        undoStackRef.current.push(current);
+        if (undoStackRef.current.length > 100) undoStackRef.current.shift();
+      }
+      redoStackRef.current = [];
+      setCanUndo(undoStackRef.current.length > 0);
+      setCanRedo(false);
+
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      typingTimerRef.current =
+        change === "typing"
+          ? setTimeout(() => {
+              typingTimerRef.current = null;
+            }, 900)
+          : null;
+    }
+
+    contentRef.current = next;
     setContent(next);
     updateNote(note.id, { content: next });
     // A no-op unless this note is in a room with someone. `collab` is declared
     // below; this is a hoisted function declaration, so it only reads it when
     // called, which is always after that point.
     collab.publish(next);
+  }
+
+  function restoreCaret(globalCaret: number) {
+    requestAnimationFrame(() => {
+      const field = textareaRef.current;
+      if (!field) return;
+      const localCaret = Math.max(
+        0,
+        Math.min(field.value.length, globalCaret - sourceOffset(field)),
+      );
+      field.focus();
+      field.setSelectionRange(localCaret, localCaret);
+    });
+  }
+
+  function undoContent() {
+    const previous = undoStackRef.current.pop();
+    if (previous === undefined) return;
+    const field = textareaRef.current;
+    const caret = field
+      ? sourceOffset(field) + field.selectionStart
+      : previous.length;
+    redoStackRef.current.push(contentRef.current);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = null;
+    writeContent(previous, "history");
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(true);
+    restoreCaret(Math.min(caret, previous.length));
+  }
+
+  function redoContent() {
+    const next = redoStackRef.current.pop();
+    if (next === undefined) return;
+    const field = textareaRef.current;
+    const caret = field ? sourceOffset(field) + field.selectionStart : next.length;
+    undoStackRef.current.push(contentRef.current);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = null;
+    writeContent(next, "history");
+    setCanUndo(true);
+    setCanRedo(redoStackRef.current.length > 0);
+    restoreCaret(Math.min(caret, next.length));
   }
 
   const [tagDraft, setTagDraft] = useState("");
@@ -192,6 +289,12 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const [shareCopied, setShareCopied] = useState(false);
   const [preparedShare, setPreparedShare] = useState<Share | null>(null);
   const [sharePreparing, setSharePreparing] = useState(false);
+  const [shareFileFormat, setShareFileFormat] =
+    useState<ShareFileFormat>("pdf");
+  const [fileSharing, setFileSharing] = useState<"email" | "whatsapp" | null>(
+    null,
+  );
+  const [shareFileMessage, setShareFileMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -222,6 +325,11 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       const caret = field ? moveCaret(field.selectionStart) : 0;
 
       setContent(next);
+      contentRef.current = next;
+      redoStackRef.current = [];
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+      setCanRedo(false);
       // The cache follows too, so the card list and the counts stay honest.
       updateNote(note.id, { content: next }, 0);
 
@@ -269,12 +377,19 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     setShareOpen(true);
   }
 
-  function copyShareLink() {
-    if (!activeShare) return;
-    void navigator.clipboard.writeText(activeShare.url).then(() => {
+  async function copyShareLink() {
+    setSharePreparing(true);
+    try {
+      const target = await getShareTarget();
+      setPreparedShare(target);
+      await navigator.clipboard.writeText(target.url);
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 1800);
-    }, openShareSetup);
+    } catch {
+      openShareSetup();
+    } finally {
+      setSharePreparing(false);
+    }
   }
 
   async function getShareTarget() {
@@ -295,34 +410,22 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     return shareCreation.current;
   }
 
-  async function prepareShareTarget() {
-    if (activeShare || sharePreparing) return;
-    setSharePreparing(true);
+  async function shareFile(target: "email" | "whatsapp") {
+    setFileSharing(target);
+    setShareFileMessage(null);
     try {
-      setPreparedShare(await getShareTarget());
+      const result = await shareNoteFile(note.id, note.title, shareFileFormat);
+      if (result === "shared") {
+        setMenuOpen(false);
+        setShareMenuOpen(false);
+      } else if (result === "downloaded") {
+        setShareFileMessage("File downloaded because native sharing is unavailable.");
+      }
     } catch {
-      setUploadError("Could not prepare sharing");
+      setShareFileMessage("Could not prepare the file.");
     } finally {
-      setSharePreparing(false);
+      setFileSharing(null);
     }
-  }
-
-  function shareByEmail() {
-    if (!activeShare) return;
-    setMenuOpen(false);
-    // This navigation happens synchronously inside the trusted click, which is
-    // required by browsers before they will launch an external mail handler.
-    window.location.href = emailShareUrl(note.title, activeShare.url);
-  }
-
-  function shareByWhatsApp() {
-    if (!activeShare) return;
-    setMenuOpen(false);
-    window.open(
-      whatsappShareUrl(note.title, activeShare.url),
-      "_blank",
-      "noopener,noreferrer",
-    );
   }
 
   function openPrintPreview() {
@@ -336,14 +439,21 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const field = textareaRef.current;
     if (!field) return;
 
-    const { selectionStart: start, selectionEnd: end, value } = field;
+    const offset = sourceOffset(field);
+    const localStart = field.selectionStart;
+    const start = offset + field.selectionStart;
+    const end = offset + field.selectionEnd;
+    const value = content;
     const selected = value.slice(start, end);
     const next = `${value.slice(0, start)}${before}${selected}${after}${value.slice(end)}`;
 
     writeContent(next);
     requestAnimationFrame(() => {
       field.focus();
-      field.setSelectionRange(start + before.length, start + before.length + selected.length);
+      field.setSelectionRange(
+        localStart + before.length,
+        localStart + before.length + selected.length,
+      );
     });
   }
 
@@ -352,7 +462,10 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const field = textareaRef.current;
     if (!field) return;
 
-    const { selectionStart: start, selectionEnd: end, value } = field;
+    const offset = sourceOffset(field);
+    const start = offset + field.selectionStart;
+    const end = offset + field.selectionEnd;
+    const value = content;
     const lineStart = value.lastIndexOf("\n", start - 1) + 1;
     const lineEnd = value.indexOf("\n", end) === -1 ? value.length : value.indexOf("\n", end);
 
@@ -367,6 +480,63 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     requestAnimationFrame(() => field.focus());
   }
 
+  function insertBlock(block: string) {
+    const field = textareaRef.current;
+    if (!field) return;
+    const offset = sourceOffset(field);
+    const localStart = field.selectionStart;
+    const start = offset + field.selectionStart;
+    const end = offset + field.selectionEnd;
+    const value = content;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    const lead = before && !before.endsWith("\n") ? "\n\n" : "";
+    const tail = after && !after.startsWith("\n") ? "\n\n" : "";
+    const insert = `${lead}${block}${tail}`;
+    writeContent(`${before}${insert}${after}`);
+    requestAnimationFrame(() => {
+      field.focus();
+      field.setSelectionRange(localStart + insert.length, localStart + insert.length);
+    });
+  }
+
+  /** Tab indents like a document editor; Shift+Tab removes one indent level. */
+  function changeIndent(field: HTMLTextAreaElement, outdent: boolean) {
+    const offset = sourceOffset(field);
+    const start = offset + field.selectionStart;
+    const end = offset + field.selectionEnd;
+    const value = contentRef.current;
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+    const nextBreak = value.indexOf("\n", end);
+    const lineEnd = nextBreak === -1 ? value.length : nextBreak;
+    const selectedLines = value.slice(lineStart, lineEnd).split("\n");
+    const indent = "    ";
+    const updated = selectedLines
+      .map((line) =>
+        outdent ? line.replace(/^(?: {1,4}|\t)/, "") : `${indent}${line}`,
+      )
+      .join("\n");
+
+    writeContent(
+      `${value.slice(0, lineStart)}${updated}${value.slice(lineEnd)}`,
+      "structural",
+    );
+
+    const removedFromFirst = outdent
+      ? selectedLines[0].length - updated.split("\n")[0].length
+      : 0;
+    const localStart = Math.max(
+      0,
+      field.selectionStart + (outdent ? -removedFromFirst : indent.length),
+    );
+    const lengthChange = updated.length - (lineEnd - lineStart);
+    const localEnd = Math.max(localStart, field.selectionEnd + lengthChange);
+    requestAnimationFrame(() => {
+      field.focus();
+      field.setSelectionRange(localStart, localEnd);
+    });
+  }
+
   /**
    * Uploads a dropped, pasted or chosen file and drops the markdown for it in
    * at the caret. Files go to the note they were dropped on, so deleting the
@@ -378,22 +548,65 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     setUploadError(null);
 
     const field = textareaRef.current;
-    let next = field?.value ?? content;
-    let caret = field?.selectionStart ?? next.length;
+    let next = content;
+    let caret = field
+      ? sourceOffset(field) + field.selectionStart
+      : next.length;
 
     for (const file of files) {
-      const form = new FormData();
-      form.append("file", file);
+      const mime = attachmentMime(file.type, file.name);
+      const importedTable =
+        mime === "text/csv" ? csvToMarkdown(await file.text()) : "";
 
       try {
-        const uploaded = await api<{ id: string; filename: string; mime: string }>(
+        const prepared = await api<
+          | { direct: false }
+          | {
+              direct: true;
+              attachment: { id: string; filename: string; mime: string };
+              uploadUrl: string;
+            }
+        >(
           `/api/notes/${note.id}/attachments`,
-          { method: "POST", body: form },
+          {
+            method: "POST",
+            body: JSON.stringify({
+              filename: file.name,
+              mime,
+              size: file.size,
+            }),
+          },
         );
+        let uploaded: { id: string; filename: string; mime: string };
+        if (prepared.direct) {
+          const response = await fetch(prepared.uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": mime },
+            body: file,
+          });
+          if (!response.ok) {
+            await fetch(`/api/attachments/${prepared.attachment.id}`, {
+              method: "DELETE",
+            });
+            throw new Error("Cloudflare R2 rejected the upload");
+          }
+          uploaded = prepared.attachment;
+        } else {
+          const form = new FormData();
+          form.append("file", file);
+          uploaded = await api<{ id: string; filename: string; mime: string }>(
+            `/api/notes/${note.id}/attachments`,
+            { method: "POST", body: form },
+          );
+        }
 
         // A picture wants a line of its own; a file can sit in the sentence.
         const snippet = attachmentMarkdown(uploaded);
-        const insert = isImageMime(uploaded.mime) ? `\n${snippet}\n` : snippet;
+        const insert = isImageMime(uploaded.mime)
+          ? `\n${snippet}\n`
+          : importedTable
+            ? `\n${snippet}\n\n${importedTable}\n`
+            : snippet;
 
         next = `${next.slice(0, caret)}${insert}${next.slice(caret)}`;
         caret += insert.length;
@@ -408,13 +621,19 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     setUploading(false);
     requestAnimationFrame(() => {
       field?.focus();
-      field?.setSelectionRange(caret, caret);
+      if (field) {
+        const localCaret = Math.max(0, caret - sourceOffset(field));
+        field.setSelectionRange(localCaret, localCaret);
+      }
     });
   }
 
   /** Opens or closes the link menu based on where the caret is now. */
   function syncLinkMenu(field: HTMLTextAreaElement) {
-    const found = wikiLinkQueryAt(field.value, field.selectionStart);
+    const found = wikiLinkQueryAt(
+      content,
+      sourceOffset(field) + field.selectionStart,
+    );
 
     // Only a real change is worth a render — this runs on every keystroke.
     setLinkMenu((current) => {
@@ -432,7 +651,9 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const field = textareaRef.current;
     if (!field || !linkMenu) return;
 
-    const { value, selectionStart: caret } = field;
+    const value = content;
+    const offset = sourceOffset(field);
+    const caret = offset + field.selectionStart;
     const next = `${value.slice(0, linkMenu.start)}[[${title}]]${value.slice(caret)}`;
     const caretAfter = linkMenu.start + title.length + 4;
 
@@ -440,7 +661,8 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     setLinkMenu(null);
     requestAnimationFrame(() => {
       field.focus();
-      field.setSelectionRange(caretAfter, caretAfter);
+      const localCaret = Math.max(0, caretAfter - offset);
+      field.setSelectionRange(localCaret, localCaret);
     });
   }
 
@@ -470,6 +692,52 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       }
     }
 
+    const primary = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+
+    if (primary) {
+      // Clipboard, cut and select-all remain native browser/OS operations.
+      if (["c", "v", "x", "a"].includes(key)) return;
+
+      if (key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoContent();
+        else undoContent();
+        return;
+      }
+      if (key === "y") {
+        event.preventDefault();
+        redoContent();
+        return;
+      }
+      if (key === "b") {
+        event.preventDefault();
+        wrapSelection("**", "**");
+        return;
+      }
+      if (key === "i") {
+        event.preventDefault();
+        wrapSelection("*", "*");
+        return;
+      }
+      if (key === "k") {
+        event.preventDefault();
+        wrapSelection("[", "](url)");
+        return;
+      }
+      if (key === "s") {
+        // Notes already autosave; suppress the browser's Save Page dialog.
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (event.key === "Tab") {
+      event.preventDefault();
+      changeIndent(event.currentTarget, event.shiftKey);
+      return;
+    }
+
     if (event.key !== "Enter" || event.shiftKey) return;
 
     const field = event.currentTarget;
@@ -488,7 +756,8 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     const caretAfter =
       continuation === "" ? lineStart + 1 : caret + 1 + continuation.length;
 
-    writeContent(next);
+    const offset = sourceOffset(field);
+    writeContent(`${content.slice(0, offset)}${next}${content.slice(offset + value.length)}`);
     requestAnimationFrame(() => {
       field.focus();
       field.setSelectionRange(caretAfter, caretAfter);
@@ -681,9 +950,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                 <button
                   type="button"
                   onClick={() => {
-                    const next = !shareMenuOpen;
-                    setShareMenuOpen(next);
-                    if (next) void prepareShareTarget();
+                    setShareMenuOpen((open) => !open);
                   }}
                   aria-expanded={shareMenuOpen}
                   className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-muted transition hover:bg-card-hover hover:text-foreground"
@@ -714,23 +981,54 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                         icon={shareCopied ? Check : LinkIcon}
                         label={shareCopied ? "Link copied" : "Copy link"}
                         indent
-                        disabled={!activeShare}
-                        onClick={copyShareLink}
+                        disabled={sharePreparing}
+                        onClick={() => void copyShareLink()}
+                      />
+                      <div className="flex items-center gap-1 px-3 py-1.5 pl-7">
+                        {SHARE_FILE_FORMATS.map((format) => (
+                          <button
+                            key={format.value}
+                            type="button"
+                            onClick={() => setShareFileFormat(format.value)}
+                            className={cn(
+                              "rounded border px-1.5 py-0.5 text-[9px] transition",
+                              shareFileFormat === format.value
+                                ? "border-transparent bg-btn text-btn-foreground"
+                                : "border-line text-muted-2 hover:text-foreground",
+                            )}
+                          >
+                            {format.label}
+                          </button>
+                        ))}
+                      </div>
+                      <MenuItem
+                        icon={fileSharing === "whatsapp" ? Loader2 : MessageCircle}
+                        label={
+                          fileSharing === "whatsapp"
+                            ? "Preparing file…"
+                            : "WhatsApp"
+                        }
+                        indent
+                        disabled={fileSharing !== null}
+                        onClick={() => void shareFile("whatsapp")}
                       />
                       <MenuItem
-                        icon={MessageCircle}
-                        label="WhatsApp"
+                        icon={fileSharing === "email" ? Loader2 : Mail}
+                        label={
+                          fileSharing === "email" ? "Preparing file…" : "Email"
+                        }
                         indent
-                        disabled={!activeShare}
-                        onClick={shareByWhatsApp}
+                        disabled={fileSharing !== null}
+                        onClick={() => void shareFile("email")}
                       />
-                      <MenuItem
-                        icon={Mail}
-                        label="Email"
-                        indent
-                        disabled={!activeShare}
-                        onClick={shareByEmail}
-                      />
+                      {shareFileMessage && (
+                        <p
+                          role="status"
+                          className="px-3 py-1.5 pl-7 text-[10px] leading-relaxed text-muted-2"
+                        >
+                          {shareFileMessage}
+                        </p>
+                      )}
                       <MenuItem
                         icon={Printer}
                         label="Print preview"
@@ -969,10 +1267,25 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
 
       {mode === "write" && (
         <div className="mt-2.5 flex flex-wrap items-center gap-0.5 border-t border-line px-3 pt-2">
-          <FormatButton label="Bold" onClick={() => wrapSelection("**", "**")}>
+          <FormatButton
+            label="Undo (Ctrl/Cmd+Z)"
+            disabled={!canUndo}
+            onClick={undoContent}
+          >
+            <Undo2 className="size-3.5" />
+          </FormatButton>
+          <FormatButton
+            label="Redo (Ctrl/Cmd+Y)"
+            disabled={!canRedo}
+            onClick={redoContent}
+          >
+            <Redo2 className="size-3.5" />
+          </FormatButton>
+          <span className="mx-1 h-5 w-px bg-line" />
+          <FormatButton label="Bold (Ctrl/Cmd+B)" onClick={() => wrapSelection("**", "**")}>
             <Bold className="size-3.5" />
           </FormatButton>
-          <FormatButton label="Italic" onClick={() => wrapSelection("*", "*")}>
+          <FormatButton label="Italic (Ctrl/Cmd+I)" onClick={() => wrapSelection("*", "*")}>
             <Italic className="size-3.5" />
           </FormatButton>
           <FormatButton label="Heading" onClick={() => prefixLine("## ")}>
@@ -989,6 +1302,22 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
           </FormatButton>
           <FormatButton label="Code" onClick={() => wrapSelection("`", "`")}>
             <Code className="size-3.5" />
+          </FormatButton>
+          <FormatButton
+            label="Insert table"
+            onClick={() => {
+              insertBlock(
+                tableToMarkdown(
+                  ["Column 1", "Column 2", "Column 3"],
+                  [
+                    ["", "", ""],
+                    ["", "", ""],
+                  ],
+                ),
+              );
+            }}
+          >
+            <Table2 className="size-3.5" />
           </FormatButton>
           <FormatButton
             label={uploading ? "Attaching…" : "Attach a file"}
@@ -1021,41 +1350,50 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       <div className="relative min-h-0 flex-1 border-t border-line">
         {mode === "write" ? (
           <>
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(event) => {
-                writeContent(event.target.value);
-                syncLinkMenu(event.currentTarget);
-              }}
-              onKeyUp={(event) => syncLinkMenu(event.currentTarget)}
-              onClick={(event) => syncLinkMenu(event.currentTarget)}
-              onBlur={() => setLinkMenu(null)}
-              onKeyDown={handleKeyDown}
-              /*
-               * Pasting a screenshot and dropping a file are the two ways
-               * anyone actually attaches anything; the toolbar button is the
-               * fallback for a keyboard.
-               */
-              onPaste={(event) => {
-                const files = [...event.clipboardData.files];
-                if (!files.length) return;
-                event.preventDefault();
-                void uploadFiles(files);
-              }}
-              onDragOver={(event) => {
-                if (event.dataTransfer.types.includes("Files")) event.preventDefault();
-              }}
-              onDrop={(event) => {
-                const files = [...event.dataTransfer.files];
-                if (!files.length) return;
-                event.preventDefault();
-                void uploadFiles(files);
-              }}
-              placeholder="Start writing... markdown works here"
-              spellCheck={false}
-              className="field h-full w-full resize-none bg-transparent px-4 py-4 leading-[1.75] text-foreground scroll-thin"
-            />
+            {parseMarkdown(content).some((block) => block.type === "table") ||
+            ATTACHMENT_MARKDOWN.test(content) ? (
+              <HybridWriteEditor
+                source={content}
+                activeRef={textareaRef}
+                onChange={writeContent}
+                onKeyDown={handleKeyDown}
+                onSyncLinks={syncLinkMenu}
+                onBlur={() => setLinkMenu(null)}
+                onFiles={(files) => void uploadFiles(files)}
+              />
+            ) : (
+              <textarea
+                ref={textareaRef}
+                data-source-offset="0"
+                value={content}
+                onChange={(event) => {
+                  writeContent(event.target.value, "typing");
+                  syncLinkMenu(event.currentTarget);
+                }}
+                onKeyUp={(event) => syncLinkMenu(event.currentTarget)}
+                onClick={(event) => syncLinkMenu(event.currentTarget)}
+                onBlur={() => setLinkMenu(null)}
+                onKeyDown={handleKeyDown}
+                onPaste={(event) => {
+                  const files = [...event.clipboardData.files];
+                  if (!files.length) return;
+                  event.preventDefault();
+                  void uploadFiles(files);
+                }}
+                onDragOver={(event) => {
+                  if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  const files = [...event.dataTransfer.files];
+                  if (!files.length) return;
+                  event.preventDefault();
+                  void uploadFiles(files);
+                }}
+                placeholder="Start writing... markdown works here"
+                spellCheck={false}
+                className="field h-full w-full resize-none bg-transparent px-4 py-4 leading-[1.75] text-foreground scroll-thin"
+              />
+            )}
 
             {/*
               Anchored to the pane rather than the caret: no measuring, and it
@@ -1111,6 +1449,11 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
               resolveLink={(title) => byTitle.get(title.trim().toLowerCase())}
               onOpenNote={select}
               onCreateNote={(title) => void createNote(note.category, [], title)}
+              onChangeTable={(line, previousRows, headers, rows) =>
+                writeContent(
+                  replaceTable(content, line, previousRows, headers, rows),
+                )
+              }
             />
           </div>
         )}
@@ -1151,6 +1494,13 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
           open={historyOpen}
           onClose={() => setHistoryOpen(false)}
           onRestore={(version) => {
+            contentRef.current = version.content;
+            undoStackRef.current = [];
+            redoStackRef.current = [];
+            if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+            typingTimerRef.current = null;
+            setCanUndo(false);
+            setCanRedo(false);
             setContent(version.content);
             updateNote(note.id, { title: version.title, content: version.content }, 0);
             setHistoryOpen(false);
@@ -1180,13 +1530,226 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   );
 }
 
+function sourceOffset(field: HTMLTextAreaElement) {
+  return Number(field.dataset.sourceOffset) || 0;
+}
+
+type HybridSegment =
+  | { type: "text"; value: string; start: number; end: number }
+  | {
+      type: "attachment";
+      id: string;
+      filename: string;
+      start: number;
+      end: number;
+    }
+  | {
+      type: "table";
+      line: number;
+      headers: string[];
+      rows: string[][];
+    };
+
+const ATTACHMENT_MARKDOWN =
+  /!?\[([^\]\n]*)\]\(\/api\/attachments\/([\w-]+)\)/;
+
+function splitAttachments(segment: Extract<HybridSegment, { type: "text" }>) {
+  const pattern = new RegExp(ATTACHMENT_MARKDOWN.source, "g");
+  const parts: HybridSegment[] = [];
+  let cursor = 0;
+  for (const match of segment.value.matchAll(pattern)) {
+    const localStart = match.index ?? 0;
+    if (localStart > cursor) {
+      parts.push({
+        type: "text",
+        value: segment.value.slice(cursor, localStart),
+        start: segment.start + cursor,
+        end: segment.start + localStart,
+      });
+    }
+    parts.push({
+      type: "attachment",
+      filename: match[1] || "Attachment",
+      id: match[2],
+      start: segment.start + localStart,
+      end: segment.start + localStart + match[0].length,
+    });
+    cursor = localStart + match[0].length;
+  }
+  if (cursor < segment.value.length) {
+    parts.push({
+      type: "text",
+      value: segment.value.slice(cursor),
+      start: segment.start + cursor,
+      end: segment.end,
+    });
+  }
+  return parts.length ? parts : [segment];
+}
+
+function hybridSegments(source: string): HybridSegment[] {
+  const lines = source.split("\n");
+  const starts: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    starts.push(offset);
+    offset += line.length + 1;
+  }
+
+  const tables = parseMarkdown(source).filter(
+    (block): block is Extract<ReturnType<typeof parseMarkdown>[number], { type: "table" }> =>
+      block.type === "table",
+  );
+
+  const segments: HybridSegment[] = [];
+  let cursor = 0;
+  for (const table of tables) {
+    const start = starts[table.line] ?? source.length;
+    const nextLine = table.line + table.rows.length + 2;
+    const end = starts[nextLine] ?? source.length;
+    if (start > cursor) {
+      segments.push({ type: "text", value: source.slice(cursor, start), start: cursor, end: start });
+    }
+    segments.push({
+      type: "table",
+      line: table.line,
+      headers: table.headers,
+      rows: table.rows,
+    });
+    cursor = end;
+  }
+
+  if (cursor < source.length || !segments.length || segments.at(-1)?.type === "table") {
+    segments.push({
+      type: "text",
+      value: source.slice(cursor),
+      start: cursor,
+      end: source.length,
+    });
+  }
+  return segments.flatMap((segment) =>
+    segment.type === "text" ? splitAttachments(segment) : segment,
+  );
+}
+
+function HybridWriteEditor({
+  source,
+  activeRef,
+  onChange,
+  onKeyDown,
+  onSyncLinks,
+  onBlur,
+  onFiles,
+}: {
+  source: string;
+  activeRef: React.RefObject<HTMLTextAreaElement | null>;
+  onChange: (
+    source: string,
+    change?: "typing" | "structural" | "history",
+  ) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSyncLinks: (field: HTMLTextAreaElement) => void;
+  onBlur: () => void;
+  onFiles: (files: File[]) => void;
+}) {
+  const segments = hybridSegments(source);
+
+  return (
+    <div className="h-full overflow-y-auto py-2 scroll-thin">
+      {segments.map((segment, index) =>
+        segment.type === "table" ? (
+          <div key={`table-${index}`} className="px-4 py-2">
+            <MarkdownPreview
+              source={tableToMarkdown(segment.headers, segment.rows)}
+              onChangeTable={(_line, previousRows, headers, rows) =>
+                onChange(
+                  replaceTable(source, segment.line, previousRows, headers, rows),
+                  "typing",
+                )
+              }
+            />
+          </div>
+        ) : segment.type === "attachment" ? (
+          <div key={`attachment-${segment.id}-${index}`} className="px-4">
+            <AttachmentCard
+              id={segment.id}
+              filename={segment.filename}
+              onRemove={() =>
+                onChange(
+                  `${source.slice(0, segment.start)}${source.slice(segment.end)}`,
+                  "structural",
+                )
+              }
+            />
+          </div>
+        ) : (
+          <textarea
+            key={`text-${index}`}
+            ref={(element) => {
+              if (
+                element &&
+                (!activeRef.current || !activeRef.current.isConnected)
+              ) {
+                activeRef.current = element;
+              }
+            }}
+            data-source-offset={segment.start}
+            value={segment.value}
+            rows={
+              segment.value
+                ? Math.max(1, segment.value.split("\n").length)
+                : 3
+            }
+            onFocus={(event) => {
+              activeRef.current = event.currentTarget;
+            }}
+            onChange={(event) => {
+              onChange(
+                `${source.slice(0, segment.start)}${event.target.value}${source.slice(
+                  segment.end,
+                )}`,
+                "typing",
+              );
+              onSyncLinks(event.currentTarget);
+            }}
+            onKeyUp={(event) => onSyncLinks(event.currentTarget)}
+            onClick={(event) => onSyncLinks(event.currentTarget)}
+            onBlur={onBlur}
+            onKeyDown={onKeyDown}
+            onPaste={(event) => {
+              const files = [...event.clipboardData.files];
+              if (!files.length) return;
+              event.preventDefault();
+              onFiles(files);
+            }}
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              const files = [...event.dataTransfer.files];
+              if (!files.length) return;
+              event.preventDefault();
+              onFiles(files);
+            }}
+            placeholder={index === 0 ? "Start writing... markdown works here" : "Continue writing…"}
+            spellCheck={false}
+            className="field block min-h-[36px] w-full resize-none overflow-hidden bg-transparent px-4 py-2 leading-[1.75] text-foreground"
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
 function FormatButton({
   label,
   onClick,
+  disabled,
   children,
 }: {
   label: string;
   onClick: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -1195,7 +1758,8 @@ function FormatButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="flex size-8 items-center justify-center rounded-md text-muted-2 transition hover:bg-card-hover hover:text-foreground"
+      disabled={disabled}
+      className="flex size-8 items-center justify-center rounded-md text-muted-2 transition hover:bg-card-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
     >
       {children}
     </button>

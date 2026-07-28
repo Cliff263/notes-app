@@ -15,7 +15,11 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useShare, useShareActions } from "@/hooks/use-note-history";
-import { emailShareUrl, whatsappShareUrl } from "@/lib/share-targets";
+import {
+  SHARE_FILE_FORMATS,
+  shareNoteFile,
+  type ShareFileFormat,
+} from "@/lib/share-targets";
 import { SHARE_DURATIONS } from "@/lib/types";
 import { cn, longDateTime } from "@/lib/utils";
 
@@ -44,6 +48,11 @@ export function ShareDialog({
   const [duration, setDuration] = useState<string>("forever");
   const [allowEdit, setAllowEdit] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [fileFormat, setFileFormat] = useState<ShareFileFormat>("pdf");
+  const [fileSharing, setFileSharing] = useState<"email" | "whatsapp" | null>(
+    null,
+  );
+  const [fileMessage, setFileMessage] = useState<string | null>(null);
 
   async function copy() {
     if (!share) return;
@@ -56,18 +65,21 @@ export function ShareDialog({
     }
   }
 
-  function email() {
-    if (!share) return;
-    window.location.href = emailShareUrl(title, share.url);
-  }
-
-  function whatsapp() {
-    if (!share) return;
-    window.open(
-      whatsappShareUrl(title, share.url),
-      "_blank",
-      "noopener,noreferrer",
-    );
+  async function shareFile(target: "email" | "whatsapp") {
+    setFileSharing(target);
+    setFileMessage(null);
+    try {
+      const result = await shareNoteFile(noteId, title, fileFormat);
+      if (result === "downloaded") {
+        setFileMessage(
+          "Native file sharing is unavailable here, so the file was downloaded.",
+        );
+      }
+    } catch {
+      setFileMessage("Could not prepare the file. Please try again.");
+    } finally {
+      setFileSharing(null);
+    }
   }
 
   return (
@@ -105,6 +117,58 @@ export function ShareDialog({
             </header>
 
             <div className="space-y-3 px-4 py-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[12px] font-medium">Share the actual file</p>
+                  <div className="flex gap-1">
+                    {SHARE_FILE_FORMATS.map((format) => (
+                      <button
+                        key={format.value}
+                        type="button"
+                        onClick={() => setFileFormat(format.value)}
+                        className={cn(
+                          "rounded-md border px-2 py-1 text-[10px] transition",
+                          fileFormat === format.value
+                            ? "border-transparent bg-btn text-btn-foreground"
+                            : "border-line text-muted hover:text-foreground",
+                        )}
+                      >
+                        {format.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <ShareAction
+                    icon={Mail}
+                    label={fileSharing === "email" ? "Preparing…" : "Email"}
+                    disabled={fileSharing !== null}
+                    onClick={() => void shareFile("email")}
+                  />
+                  <ShareAction
+                    icon={MessageCircle}
+                    label={
+                      fileSharing === "whatsapp" ? "Preparing…" : "WhatsApp"
+                    }
+                    disabled={fileSharing !== null}
+                    onClick={() => void shareFile("whatsapp")}
+                  />
+                  <ShareAction icon={Printer} label="Print" onClick={onPrint} />
+                </div>
+                <p className="text-[10px] leading-relaxed text-muted-2">
+                  Your device&rsquo;s share sheet will open with the file attached.
+                  Choose Mail or WhatsApp, then select a recipient.
+                </p>
+                {fileMessage && (
+                  <p role="status" className="text-[11px] text-muted">
+                    {fileMessage}
+                  </p>
+                )}
+              </div>
+
+              <div className="border-t border-line" />
+
               {isPending ? (
                 <p className="text-[12px] text-muted-2">Checking…</p>
               ) : share ? (
@@ -114,16 +178,6 @@ export function ShareDialog({
                       ? "Anyone with this link can read and edit the note, without an account. Edits appear as they are typed when you are both on the page."
                       : "Anyone with this link can read the note. They cannot edit it, and they do not need an account."}
                   </p>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <ShareAction icon={Mail} label="Email" onClick={email} />
-                    <ShareAction
-                      icon={MessageCircle}
-                      label="WhatsApp"
-                      onClick={whatsapp}
-                    />
-                    <ShareAction icon={Printer} label="Print" onClick={onPrint} />
-                  </div>
 
                   <div className="flex items-center gap-2">
                     <input
@@ -176,11 +230,6 @@ export function ShareDialog({
                 </>
               ) : (
                 <>
-                  <ShareAction
-                    icon={Printer}
-                    label="Print preview"
-                    onClick={onPrint}
-                  />
                   <p className="text-[12px] leading-relaxed text-muted">
                     Create a link that anyone can open, with no account needed.
                     You can withdraw it at any time.
@@ -244,16 +293,19 @@ function ShareAction({
   icon: Icon,
   label,
   onClick,
+  disabled = false,
 }: {
   icon: typeof Mail;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-line bg-card px-2 py-3 text-[11px] font-medium text-muted transition hover:border-line-strong hover:bg-card-hover hover:text-foreground"
+      disabled={disabled}
+      className="flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-line bg-card px-2 py-3 text-[11px] font-medium text-muted transition hover:border-line-strong hover:bg-card-hover hover:text-foreground disabled:cursor-wait disabled:opacity-50"
     >
       <Icon className="size-4 text-glow-2" />
       <span className="truncate">{label}</span>

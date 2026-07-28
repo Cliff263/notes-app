@@ -1,7 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { notes } from "@/db/schema";
+import { attachments, events, notes } from "@/db/schema";
+import {
+  linkedEventDescription,
+  linkedEventTitle,
+  moveLinkedEvent,
+} from "@/lib/note-event-sync";
 import { serializeNote } from "@/lib/serialize";
+import { deleteObjects } from "@/lib/object-storage";
 import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
 import { recordVersion } from "@/lib/versions";
 
@@ -70,6 +76,50 @@ export async function PATCH(request: Request, { params }: Params) {
 
     if (!row) return Response.json({ error: "Note not found" }, { status: 404 });
 
+    /*
+     * A linked calendar event is a projection of the note, so note-owned
+     * fields follow their source. Calendar-owned fields (location, colour,
+     * recurrence and the event's duration) remain editable on the event.
+     *
+     * Moving a due date preserves each linked event's duration. Clearing a due
+     * date only removes the note from "Notes due"; it does not silently delete
+     * or unschedule an event the user explicitly added to their calendar.
+     */
+    const eventPatch: Record<string, unknown> = {};
+    if (typeof body.title === "string") {
+      eventPatch.title = linkedEventTitle(row.title);
+    }
+    if (typeof body.content === "string") {
+      eventPatch.description = linkedEventDescription(row.content);
+    }
+
+    if (Object.keys(eventPatch).length > 0) {
+      await db
+        .update(events)
+        .set(eventPatch)
+        .where(and(eq(events.noteId, id), eq(events.userId, userId)));
+    }
+
+    if (body.dueAt !== undefined && row.dueAt) {
+      const linked = await db
+        .select({
+          id: events.id,
+          startsAt: events.startsAt,
+          endsAt: events.endsAt,
+        })
+        .from(events)
+        .where(and(eq(events.noteId, id), eq(events.userId, userId)));
+
+      await Promise.all(
+        linked.map((event) =>
+          db
+            .update(events)
+            .set(moveLinkedEvent(event, row.dueAt!))
+            .where(and(eq(events.id, event.id), eq(events.userId, userId))),
+        ),
+      );
+    }
+
     // History is a nicety: losing a snapshot must never lose the edit.
     try {
       await recordVersion(before, { title: row.title, content: row.content });
@@ -95,12 +145,19 @@ export async function DELETE(request: Request, { params }: Params) {
     const permanent = new URL(request.url).searchParams.get("permanent") === "true";
 
     if (permanent) {
+      const stored = await db
+        .select({ storageKey: attachments.storageKey })
+        .from(attachments)
+        .where(
+          and(eq(attachments.noteId, id), eq(attachments.userId, userId)),
+        );
       const [row] = await db
         .delete(notes)
         .where(and(eq(notes.id, id), eq(notes.userId, userId)))
         .returning({ id: notes.id });
 
       if (!row) return Response.json({ error: "Note not found" }, { status: 404 });
+      await deleteObjects(stored.map((item) => item.storageKey));
       return Response.json({ ok: true, permanent: true });
     }
 

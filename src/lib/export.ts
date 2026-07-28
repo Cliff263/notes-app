@@ -9,7 +9,13 @@ import {
 } from "docx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { fitWithin, imageSize } from "./image-size";
-import { inlineToText, parseMarkdown, type Block, type Inline } from "./markdown";
+import {
+  inlineToText,
+  parseInline,
+  parseMarkdown,
+  type Block,
+  type Inline,
+} from "./markdown";
 import type { Note } from "./types";
 import { longDateTime, wordCount } from "./utils";
 
@@ -27,7 +33,9 @@ export type ImageBundle = Map<string, ImageBytes>;
  * out; one that cannot be embedded keeps it, so a reader still knows it exists.
  */
 function stripEmbedded(block: Block, images: ImageBundle): Block {
-  if (block.type === "code" || block.type === "rule") return block;
+  if (block.type === "code" || block.type === "rule" || block.type === "table") {
+    return block;
+  }
   return {
     ...block,
     content: block.content.filter(
@@ -40,9 +48,20 @@ function imagesIn(blocks: Block[]) {
   const found: Array<Inline & { type: "image" }> = [];
   for (const block of blocks) {
     if (block.type === "code" || block.type === "rule") continue;
-    for (const node of block.content) if (node.type === "image") found.push(node);
+    const content =
+      block.type === "table"
+        ? [...block.headers, ...block.rows.flat()].flatMap(parseInline)
+        : block.content;
+    for (const node of content) if (node.type === "image") found.push(node);
   }
   return found;
+}
+
+function tableLines(block: Extract<Block, { type: "table" }>) {
+  return [
+    block.headers.join(" | "),
+    ...block.rows.map((row) => row.join(" | ")),
+  ];
 }
 
 export const EXPORT_MIME: Record<string, string> = {
@@ -113,6 +132,8 @@ export function toPlainText(notes: Note[]) {
                 return block.value;
               case "rule":
                 return "----------";
+              case "table":
+                return tableLines(block).join("\n");
               default:
                 return inlineToText(block.content);
             }
@@ -149,7 +170,9 @@ const DOCX_IMAGE_TYPES: Record<string, "png" | "jpg" | "gif"> = {
 };
 
 function imageParagraphs(block: Block, images: ImageBundle) {
-  if (block.type === "code" || block.type === "rule") return [];
+  if (block.type === "code" || block.type === "rule" || block.type === "table") {
+    return [];
+  }
 
   const paragraphs: Paragraph[] = [];
   for (const node of block.content) {
@@ -230,6 +253,17 @@ function blockToParagraph(block: Block) {
       return new Paragraph({
         text: "",
         border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "D4D4D8" } },
+      });
+    case "table":
+      return new Paragraph({
+        children: [
+          new TextRun({
+            text: tableLines(block).join("\n"),
+            size: 20,
+            font: "Consolas",
+          }),
+        ],
+        spacing: { after: 120 },
       });
     default:
       return new Paragraph({ children: inlineRuns(block.content), spacing: { after: 120 } });
@@ -425,6 +459,12 @@ export async function toPdf(notes: Note[], images: ImageBundle = new Map()) {
             });
             y -= 14;
           }
+          break;
+        case "table":
+          for (const line of tableLines(block)) {
+            draw(line, { size: 10, gap: 4 });
+          }
+          y -= 4;
           break;
         default:
           draw(inlineToText(block.content), { size: 11, gap: 5 });

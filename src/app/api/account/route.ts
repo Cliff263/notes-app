@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { events, notes, users } from "@/db/schema";
+import { attachments, events, notes, users } from "@/db/schema";
+import { deleteObjects } from "@/lib/object-storage";
 import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
 
 export async function GET() {
@@ -62,8 +63,13 @@ export async function PATCH(request: Request) {
 export async function DELETE() {
   try {
     const userId = await requireUserId();
+    const stored = await db
+      .select({ storageKey: attachments.storageKey })
+      .from(attachments)
+      .where(eq(attachments.userId, userId));
     // Notes, events, accounts and sessions all cascade from the user row.
     await db.delete(users).where(eq(users.id, userId));
+    await deleteObjects(stored.map((item) => item.storageKey));
     return Response.json({ ok: true });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorized();

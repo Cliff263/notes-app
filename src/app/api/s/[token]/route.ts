@@ -1,6 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { notes } from "@/db/schema";
+import { events, notes } from "@/db/schema";
+import {
+  linkedEventDescription,
+  linkedEventTitle,
+} from "@/lib/note-event-sync";
 import { clientIp, LIMITS, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { resolveShare } from "@/lib/share";
 import { recordVersion } from "@/lib/versions";
@@ -51,6 +55,16 @@ export async function PATCH(request: Request, { params }: Params) {
     .returning();
 
   if (!row) return Response.json({ error: "Note not found" }, { status: 404 });
+
+  const eventPatch: { title?: string; description?: string } = {};
+  if (patch.title !== undefined) eventPatch.title = linkedEventTitle(row.title);
+  if (patch.content !== undefined) {
+    eventPatch.description = linkedEventDescription(row.content);
+  }
+  await db
+    .update(events)
+    .set(eventPatch)
+    .where(and(eq(events.noteId, row.id), eq(events.userId, row.userId)));
 
   // A guest's edits go into the owner's history like anyone else's, so an
   // unwelcome change can be found and undone.

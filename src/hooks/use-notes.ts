@@ -412,6 +412,13 @@ export function useNoteActions() {
     onSuccess: (note, { id, patch }, context) => {
       reconcileNoteCaches(client, note);
       client.setQueryData(queryKeys.notes.detail(note.id), note);
+      if (
+        typeof patch.title === "string" ||
+        typeof patch.content === "string" ||
+        patch.dueAt !== undefined
+      ) {
+        void client.invalidateQueries({ queryKey: queryKeys.events.all });
+      }
       if (context?.linksChanged || typeof patch.title === "string") {
         void client.invalidateQueries({
           queryKey: [...queryKeys.notes.all, "backlinks"],

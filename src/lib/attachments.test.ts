@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   attachmentIdFrom,
+  attachmentKind,
   attachmentMarkdown,
+  attachmentMime,
   formatBytes,
   isAllowedMime,
   isImageMime,
+  isInlinePreviewMime,
 } from "./attachments";
 import { fitWithin, imageSize } from "./image-size";
 
@@ -24,6 +27,12 @@ describe("the allowlist", () => {
   it("accepts what it can safely serve back", () => {
     expect(isAllowedMime("image/png")).toBe(true);
     expect(isAllowedMime("application/pdf")).toBe(true);
+    expect(
+      isAllowedMime(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    ).toBe(true);
+    expect(isAllowedMime("video/mp4")).toBe(true);
   });
 
   it("refuses anything a browser might run", () => {
@@ -36,6 +45,29 @@ describe("the allowlist", () => {
   it("does not mistake an inherited property for an allowed type", () => {
     expect(isAllowedMime("constructor")).toBe(false);
     expect(isAllowedMime("toString")).toBe(false);
+  });
+});
+
+describe("attachment metadata", () => {
+  it("recovers a safe MIME type from a filename when the browser omits it", () => {
+    expect(attachmentMime("", "budget.xlsx")).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(attachmentMime("", "clip.mp4")).toBe("video/mp4");
+    expect(attachmentMime("application/octet-stream", "resume.pdf")).toBe(
+      "application/pdf",
+    );
+  });
+
+  it("uses human-readable file kinds", () => {
+    expect(attachmentKind("application/pdf", "cv.pdf")).toBe("PDF");
+    expect(attachmentKind("video/mp4", "intro.mp4")).toBe("Video");
+    expect(
+      attachmentKind(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "cv.docx",
+      ),
+    ).toBe("Document");
   });
 });
 
@@ -95,5 +127,26 @@ describe("isImageMime", () => {
   it("separates pictures from files", () => {
     expect(isImageMime("image/jpeg")).toBe(true);
     expect(isImageMime("application/pdf")).toBe(false);
+  });
+});
+
+describe("isInlinePreviewMime", () => {
+  it("includes the document formats rendered inside the app", () => {
+    expect(isInlinePreviewMime("application/pdf")).toBe(true);
+    expect(
+      isInlinePreviewMime(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    ).toBe(true);
+    expect(
+      isInlinePreviewMime(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    ).toBe(true);
+    expect(
+      isInlinePreviewMime(
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ),
+    ).toBe(true);
   });
 });

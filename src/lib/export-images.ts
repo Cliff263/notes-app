@@ -3,7 +3,8 @@ import { db } from "@/db/client";
 import { attachments } from "@/db/schema";
 import { attachmentIdFrom, attachmentSrc, isImageMime } from "./attachments";
 import type { ImageBundle } from "./export";
-import { parseMarkdown } from "./markdown";
+import { parseInline, parseMarkdown } from "./markdown";
+import { getObject } from "./object-storage";
 import type { Note } from "./types";
 
 /**
@@ -21,7 +22,11 @@ export async function loadExportImages(
   for (const note of notes) {
     for (const block of parseMarkdown(note.content)) {
       if (block.type === "code" || block.type === "rule") continue;
-      for (const node of block.content) {
+      const content =
+        block.type === "table"
+          ? [...block.headers, ...block.rows.flat()].flatMap(parseInline)
+          : block.content;
+      for (const node of content) {
         if (node.type !== "image") continue;
         const id = attachmentIdFrom(node.src);
         if (id) ids.add(id);
@@ -37,13 +42,15 @@ export async function loadExportImages(
       id: attachments.id,
       mime: attachments.mime,
       data: attachments.data,
+      storageKey: attachments.storageKey,
     })
     .from(attachments)
     .where(and(eq(attachments.userId, userId), inArray(attachments.id, [...ids])));
 
   for (const row of rows) {
     if (isImageMime(row.mime)) {
-      bundle.set(attachmentSrc(row.id), { data: row.data, mime: row.mime });
+      const data = row.storageKey ? await getObject(row.storageKey) : row.data;
+      if (data) bundle.set(attachmentSrc(row.id), { data, mime: row.mime });
     }
   }
 
