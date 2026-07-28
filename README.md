@@ -142,6 +142,8 @@ its own still falls back to a substring match.
 
 - Give a note a due date and it appears in the calendar's "Notes due" list
 - "Add to calendar" creates an event from the note and links them both ways
+- Linked events automatically follow changes to the note or journal title,
+  content excerpt and due date
 
 **On a phone**
 
