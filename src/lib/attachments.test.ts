@@ -7,6 +7,7 @@ import {
   formatBytes,
   isAllowedMime,
   isImageMime,
+  isInlinePreviewMime,
 } from "./attachments";
 import { fitWithin, imageSize } from "./image-size";
 
@@ -126,5 +127,26 @@ describe("isImageMime", () => {
   it("separates pictures from files", () => {
     expect(isImageMime("image/jpeg")).toBe(true);
     expect(isImageMime("application/pdf")).toBe(false);
+  });
+});
+
+describe("isInlinePreviewMime", () => {
+  it("includes the document formats rendered inside the app", () => {
+    expect(isInlinePreviewMime("application/pdf")).toBe(true);
+    expect(
+      isInlinePreviewMime(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    ).toBe(true);
+    expect(
+      isInlinePreviewMime(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    ).toBe(true);
+    expect(
+      isInlinePreviewMime(
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ),
+    ).toBe(true);
   });
 });

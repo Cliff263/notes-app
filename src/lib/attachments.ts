@@ -67,7 +67,15 @@ export function isInlinePreviewMime(mime: string) {
     mime.startsWith("video/") ||
     mime.startsWith("audio/") ||
     mime === "application/pdf" ||
-    mime.startsWith("text/")
+    mime.startsWith("text/") ||
+    mime ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mime ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mime ===
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+    mime === "application/vnd.oasis.opendocument.spreadsheet" ||
+    mime === "application/vnd.oasis.opendocument.text"
   );
 }
 

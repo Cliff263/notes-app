@@ -14,7 +14,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  MarkdownDocument,
+  PdfDocument,
+  PresentationDocument,
+  SpreadsheetDocument,
+  TextDocument,
+} from "@/components/notes/attachment-viewers";
 import {
   attachmentKind,
   attachmentMime,
@@ -142,17 +149,29 @@ function AttachmentViewer({
   onClose: () => void;
 }) {
   const [documentText, setDocumentText] = useState<string | null>(null);
+  const [fileBuffer, setFileBuffer] = useState<ArrayBuffer | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const filename = metadata?.filename ?? fallback.filename;
   const mime = attachmentMime(metadata?.mime ?? "", filename);
+  const extension = filename.split(".").pop()?.toLowerCase() ?? "";
+  const docxPreview = extension === "docx";
+  const pdfPreview = mime === "application/pdf" || extension === "pdf";
+  const markdownPreview = ["md", "markdown", "mdown"].includes(extension);
+  const spreadsheetPreview = ["xlsx", "csv", "tsv", "ods"].includes(extension);
+  const presentationPreview = extension === "pptx";
   const modernOffice = /\.(docx|pptx|xlsx|odt|ods)$/i.test(filename);
-  const textPreview = mime.startsWith("text/") || modernOffice;
+  const textPreview =
+    mime.startsWith("text/") ||
+    markdownPreview ||
+    ["csv", "tsv", "ods", "odt"].includes(extension);
+  const structuredBinaryPreview =
+    docxPreview || pdfPreview || extension === "xlsx" || presentationPreview;
   const binaryPreview =
     mime.startsWith("image/") ||
     mime.startsWith("video/") ||
-    mime.startsWith("audio/") ||
-    mime === "application/pdf";
+    mime.startsWith("audio/");
+  const handleDocumentError = useCallback(() => setLoadError(true), []);
 
   useEffect(() => {
     if (!textPreview) return;
@@ -160,7 +179,7 @@ function AttachmentViewer({
     void fetch(rawUrl)
       .then(async (response) => {
         if (!response.ok) throw new Error("Could not load attachment");
-        if (modernOffice) {
+        if (modernOffice && ["ods", "odt"].includes(extension)) {
           return extractOfficeText(
             new Uint8Array(await response.arrayBuffer()),
             filename,
@@ -177,7 +196,26 @@ function AttachmentViewer({
     return () => {
       active = false;
     };
-  }, [filename, modernOffice, rawUrl, textPreview]);
+  }, [extension, filename, modernOffice, rawUrl, textPreview]);
+
+  useEffect(() => {
+    if (!structuredBinaryPreview) return;
+    let active = true;
+    void fetch(rawUrl)
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load attachment");
+        return response.arrayBuffer();
+      })
+      .then((buffer) => {
+        if (active) setFileBuffer(buffer);
+      })
+      .catch(() => {
+        if (active) setLoadError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [rawUrl, structuredBinaryPreview]);
 
   useEffect(() => {
     if (!binaryPreview) return;
@@ -218,6 +256,47 @@ function AttachmentViewer({
     if (binaryPreview && !previewUrl) {
       return <p className="text-[12px] text-zinc-400">Loading preview…</p>;
     }
+    if (structuredBinaryPreview && !fileBuffer) {
+      return <p className="text-[12px] text-zinc-400">Preparing document…</p>;
+    }
+    if (docxPreview && fileBuffer) {
+      return (
+        <DocxDocument
+          blob={new Blob([fileBuffer], { type: mime })}
+          filename={filename}
+          onError={handleDocumentError}
+        />
+      );
+    }
+    if (pdfPreview && fileBuffer) {
+      return (
+        <PdfDocument
+          data={fileBuffer}
+          filename={filename}
+          onError={handleDocumentError}
+        />
+      );
+    }
+    if (presentationPreview && fileBuffer) {
+      return (
+        <PresentationDocument
+          data={fileBuffer}
+          filename={filename}
+          onError={handleDocumentError}
+        />
+      );
+    }
+    if (spreadsheetPreview) {
+      return (
+        <SpreadsheetDocument
+          data={extension === "xlsx" ? fileBuffer ?? undefined : undefined}
+          text={extension === "xlsx" ? undefined : documentText ?? undefined}
+          extension={extension}
+          filename={filename}
+          onError={handleDocumentError}
+        />
+      );
+    }
     if (mime.startsWith("image/")) {
       return (
         // Blob URLs are authenticated user attachments, not optimizable assets.
@@ -252,15 +331,11 @@ function AttachmentViewer({
         />
       );
     }
-    if (mime === "application/pdf") {
-      return <iframe src={previewUrl!} title={filename} className="h-full w-full border-0" />;
+    if (markdownPreview) {
+      return <MarkdownDocument text={documentText ?? ""} />;
     }
     if (textPreview) {
-      return (
-        <pre className="h-full w-full overflow-auto whitespace-pre-wrap rounded-lg bg-white p-6 text-[12px] leading-relaxed text-zinc-900 scroll-thin">
-          {documentText ?? "Loading document…"}
-        </pre>
-      );
+      return <TextDocument text={documentText ?? ""} />;
     }
     return (
       <div className="flex flex-col items-center gap-3 text-center">
@@ -273,11 +348,20 @@ function AttachmentViewer({
     );
   }, [
     binaryPreview,
+    docxPreview,
     documentText,
+    extension,
+    fileBuffer,
     filename,
+    handleDocumentError,
     loadError,
+    markdownPreview,
     mime,
+    pdfPreview,
+    presentationPreview,
     previewUrl,
+    spreadsheetPreview,
+    structuredBinaryPreview,
     textPreview,
   ]);
 
@@ -318,7 +402,7 @@ function AttachmentViewer({
         </button>
       </span>
       <span
-        className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4 text-white sm:p-6"
+        className="flex min-h-0 flex-1 items-center justify-center overflow-auto text-white"
         onClick={(event) => event.stopPropagation()}
       >
         {content}
@@ -327,11 +411,91 @@ function AttachmentViewer({
   );
 }
 
+function DocxDocument({
+  blob,
+  filename,
+  onError,
+}: {
+  blob: Blob;
+  filename: string;
+  onError: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let active = true;
+    container.replaceChildren();
+
+    void import("docx-preview")
+      .then(({ renderAsync }) =>
+        renderAsync(blob, container, container, {
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          ignoreFonts: false,
+          breakPages: true,
+          renderHeaders: true,
+          renderFooters: true,
+          renderFootnotes: true,
+          renderEndnotes: true,
+          renderChanges: true,
+          renderComments: true,
+          renderAltChunks: true,
+          useBase64URL: true,
+          experimental: true,
+        }),
+      )
+      .catch(() => {
+        if (active) onError();
+      });
+
+    return () => {
+      active = false;
+      container.replaceChildren();
+    };
+  }, [blob, onError]);
+
+  return (
+    <div
+      ref={containerRef}
+      role="document"
+      aria-label={filename}
+      className="docx-viewer-canvas h-full min-h-[36rem] w-full overflow-auto bg-zinc-800 text-zinc-900 scroll-thin"
+    />
+  );
+}
+
 function extractOfficeText(bytes: Uint8Array, filename: string) {
   const files = unzipSync(bytes);
   const decoder = new TextDecoder();
   const extension = filename.split(".").pop()?.toLowerCase();
   if (extension === "xlsx") return extractWorkbook(files, decoder);
+  if (extension === "ods") {
+    const content = files["content.xml"];
+    if (!content) return "This spreadsheet contains no extractable cells.";
+    const xml = new DOMParser().parseFromString(
+      decoder.decode(content),
+      "application/xml",
+    );
+    return (
+      [...xml.getElementsByTagName("*")]
+        .filter((node) => node.localName === "table-row")
+        .map((row) =>
+          [...row.children]
+            .filter((cell) => cell.localName === "table-cell")
+            .map((cell) =>
+              [...cell.getElementsByTagName("*")]
+                .filter((node) => node.localName === "p")
+                .map((node) => node.textContent ?? "")
+                .join("\n"),
+            )
+            .join("\t"),
+        )
+        .join("\n") || "This spreadsheet contains no extractable cells."
+    );
+  }
   const paths =
     extension === "docx"
       ? ["word/document.xml"]
