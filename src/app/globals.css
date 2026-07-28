@@ -228,3 +228,34 @@ textarea::placeholder {
     overflow-x: hidden;
   }
 }
+
+@media print {
+  :root,
+  [data-theme="light"] {
+    --background: #ffffff;
+    --surface: #ffffff;
+    --panel: #f4f4f5;
+    --card: #ffffff;
+    --foreground: #18181b;
+    --muted: #52525b;
+    --muted-2: #71717a;
+    --border: #d4d4d8;
+    --border-strong: #a1a1aa;
+  }
+
+  body {
+    background: #ffffff;
+    color: #18181b;
+    overscroll-behavior: auto;
+  }
+
+  .print-note {
+    min-height: auto;
+    max-width: none;
+    padding: 0;
+  }
+
+  [data-print-hidden] {
+    display: none !important;
+  }
+}

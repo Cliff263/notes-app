@@ -10,8 +10,8 @@ export function createShareToken() {
   return randomBytes(32).toString("base64url");
 }
 
-export function shareUrl(token: string) {
-  return `${appUrl()}/s/${token}`;
+export function shareUrl(token: string, origin = appUrl()) {
+  return `${origin.replace(/\/$/, "")}/s/${token}`;
 }
 
 export type ResolvedShare = { share: DbNoteShare; note: DbNote };

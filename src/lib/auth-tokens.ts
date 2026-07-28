@@ -55,9 +55,13 @@ export async function consumeToken(token: string, kind: "reset" | "verify") {
 }
 
 export function appUrl() {
+  const vercelHost =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
+
   return (
     process.env.AUTH_URL ??
     process.env.NEXT_PUBLIC_APP_URL ??
+    (vercelHost ? `https://${vercelHost}` : undefined) ??
     "http://localhost:3000"
   ).replace(/\/$/, "");
 }

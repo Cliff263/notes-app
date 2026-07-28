@@ -11,9 +11,9 @@ function serialize(row: {
   expiresAt: Date | null;
   createdAt: Date;
   allowEdit: boolean;
-}) {
+}, origin: string) {
   return {
-    url: shareUrl(row.token),
+    url: shareUrl(row.token, origin),
     token: row.token,
     allowEdit: row.allowEdit,
     expiresAt: row.expiresAt?.toISOString() ?? null,
@@ -22,7 +22,7 @@ function serialize(row: {
 }
 
 /** Whether this note is currently shared, and where. */
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   try {
     const userId = await requireUserId();
     const { id } = await params;
@@ -33,7 +33,9 @@ export async function GET(_request: Request, { params }: Params) {
       .where(and(eq(noteShares.noteId, id), eq(noteShares.userId, userId)))
       .limit(1);
 
-    return Response.json({ share: row ? serialize(row) : null });
+    return Response.json({
+      share: row ? serialize(row, new URL(request.url).origin) : null,
+    });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorized();
     throw error;
@@ -74,7 +76,10 @@ export async function POST(request: Request, { params }: Params) {
       })
       .returning();
 
-    return Response.json({ share: serialize(row) }, { status: 201 });
+    return Response.json(
+      { share: serialize(row, new URL(request.url).origin) },
+      { status: 201 },
+    );
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorized();
     throw error;

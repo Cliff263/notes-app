@@ -35,7 +35,7 @@ export default async function SharedNotePage({ params }: Params) {
   const { note } = found;
 
   return (
-    <main className="mx-auto min-h-dvh w-full max-w-[760px] px-5 py-10 sm:px-8 sm:py-16">
+    <main className="print-note mx-auto min-h-dvh w-full max-w-[760px] px-5 py-10 sm:px-8 sm:py-16">
       <header className="border-b border-line pb-5">
         <p className="text-[11px] uppercase tracking-[0.14em] text-muted-2">
           {found.share.allowEdit ? "Shared note · you can edit this" : "Shared note"}
@@ -77,7 +77,10 @@ export default async function SharedNotePage({ params }: Params) {
         </article>
       )}
 
-      <footer className="border-t border-line pt-5 text-[11px] leading-relaxed text-muted-2">
+      <footer
+        data-print-hidden
+        className="border-t border-line pt-5 text-[11px] leading-relaxed text-muted-2"
+      >
         Shared from{" "}
         <Link href="/" className="text-glow-2 underline underline-offset-2">
           Nexora

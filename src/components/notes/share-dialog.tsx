@@ -1,7 +1,18 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, Copy, Eye, Globe, Link2Off, PencilLine, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Eye,
+  Globe,
+  Link2Off,
+  Mail,
+  MessageCircle,
+  PencilLine,
+  Printer,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 import { useShare, useShareActions } from "@/hooks/use-note-history";
 import { SHARE_DURATIONS } from "@/lib/types";
@@ -40,6 +51,45 @@ export function ShareDialog({
     } catch {
       // Clipboard access can be refused; the field is selectable either way.
     }
+  }
+
+  function email() {
+    if (!share) return;
+    const noteTitle = title || "Untitled note";
+    const subject = encodeURIComponent(`Nexora note: ${noteTitle}`);
+    const body = encodeURIComponent(
+      `Read “${noteTitle}” on Nexora:\n\n${share.url}`,
+    );
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  }
+
+  function whatsapp() {
+    if (!share) return;
+    const noteTitle = title || "Untitled note";
+    const message = encodeURIComponent(
+      `Read “${noteTitle}” on Nexora:\n${share.url}`,
+    );
+    window.open(
+      `https://wa.me/?text=${message}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
+  function print() {
+    if (!share) return;
+    const printWindow = window.open(share.url, "_blank");
+    if (!printWindow) return;
+
+    printWindow.opener = null;
+    printWindow.addEventListener(
+      "load",
+      () => {
+        printWindow.focus();
+        printWindow.print();
+      },
+      { once: true },
+    );
   }
 
   return (
@@ -86,6 +136,16 @@ export function ShareDialog({
                       ? "Anyone with this link can read and edit the note, without an account. Edits appear as they are typed when you are both on the page."
                       : "Anyone with this link can read the note. They cannot edit it, and they do not need an account."}
                   </p>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <ShareAction icon={Mail} label="Email" onClick={email} />
+                    <ShareAction
+                      icon={MessageCircle}
+                      label="WhatsApp"
+                      onClick={whatsapp}
+                    />
+                    <ShareAction icon={Printer} label="Print" onClick={print} />
+                  </div>
 
                   <div className="flex items-center gap-2">
                     <input
@@ -194,5 +254,26 @@ export function ShareDialog({
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+function ShareAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof Mail;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-line bg-card px-2 py-3 text-[11px] font-medium text-muted transition hover:border-line-strong hover:bg-card-hover hover:text-foreground"
+    >
+      <Icon className="size-4 text-glow-2" />
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
