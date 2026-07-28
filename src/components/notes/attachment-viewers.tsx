@@ -26,7 +26,7 @@ export function PdfDocument({
     const renderTasks: { cancel: () => void }[] = [];
     const timeout = window.setTimeout(() => {
       if (!settled && active) onError();
-    }, 20_000);
+    }, 90_000);
     container.replaceChildren();
 
     // The legacy build retains compatibility shims needed by some Edge and
