@@ -7,7 +7,7 @@
  * workspace readable offline.
  */
 
-const VERSION = "nexora-v1";
+const VERSION = "nexora-v2";
 const SHELL_CACHE = `${VERSION}-shell`;
 const DATA_CACHE = `${VERSION}-data`;
 

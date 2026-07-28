@@ -18,7 +18,10 @@ export function OfflineIndicator() {
     // The worker is only registered for production builds; in dev it would
     // fight Turbopack's own asset handling.
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      navigator.serviceWorker
+        .register("/sw.js", { updateViaCache: "none" })
+        .then((registration) => registration.update())
+        .catch(() => undefined);
     }
 
     return stopOutbox;

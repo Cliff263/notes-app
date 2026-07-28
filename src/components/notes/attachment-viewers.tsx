@@ -21,8 +21,12 @@ export function PdfDocument({
     const container = containerRef.current;
     if (!container) return;
     let active = true;
+    let settled = false;
     let loadingTask: { destroy: () => Promise<void> } | null = null;
     const renderTasks: { cancel: () => void }[] = [];
+    const timeout = window.setTimeout(() => {
+      if (!settled && active) onError();
+    }, 20_000);
     container.replaceChildren();
 
     void import("pdfjs-dist")
@@ -70,14 +74,19 @@ export function PdfDocument({
           renderTasks.push(renderTask);
           await renderTask.promise;
         }
+        settled = true;
+        window.clearTimeout(timeout);
         if (active) setLoading(false);
       })
       .catch(() => {
+        settled = true;
+        window.clearTimeout(timeout);
         if (active) onError();
       });
 
     return () => {
       active = false;
+      window.clearTimeout(timeout);
       renderTasks.forEach((task) => task.cancel());
       void loadingTask?.destroy();
       container.replaceChildren();

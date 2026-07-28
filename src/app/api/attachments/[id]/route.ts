@@ -71,7 +71,10 @@ export async function GET(request: Request, { params }: Params) {
   return new Response(new Uint8Array(data), {
     headers: {
       "Content-Type": mime,
-      "Content-Length": String(row.size),
+      // The stored metadata can be stale after an interrupted direct-to-R2
+      // upload. Advertising more bytes than R2 returned leaves browser fetches
+      // waiting forever, which in turn leaves document previews on "Loading".
+      "Content-Length": String(data.byteLength),
       "Content-Disposition": disposition,
       "Cache-Control": "private, max-age=31536000, immutable",
       "X-Content-Type-Options": "nosniff",
