@@ -157,7 +157,7 @@ export function NotesPanel({ filter }: { filter: NoteFilter }) {
       </header>
 
       {/* The view hero: which slice you're looking at, and what you can do to it */}
-      <div className="relative overflow-hidden border-b border-line px-4 py-3.5">
+      <div className="relative z-20 overflow-visible border-b border-line px-4 py-3.5">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-[0.13]"
