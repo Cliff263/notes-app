@@ -29,10 +29,14 @@ export function PdfDocument({
     }, 20_000);
     container.replaceChildren();
 
-    void import("pdfjs-dist")
+    // The legacy build retains compatibility shims needed by some Edge and
+    // installed-PWA runtimes. Keep the viewer and worker on the same build;
+    // mixing the standard viewer with a legacy worker (or vice versa) can make
+    // a valid PDF fail before the first page is rendered.
+    void import("pdfjs-dist/legacy/build/pdf.mjs")
       .then(async (pdfjs) => {
         pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
+          "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
           import.meta.url,
         ).toString();
         const task = pdfjs.getDocument({ data: new Uint8Array(data.slice(0)) });
