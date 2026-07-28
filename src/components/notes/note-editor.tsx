@@ -47,7 +47,12 @@ import {
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { ALLOWED_MIME, attachmentMarkdown, isImageMime } from "@/lib/attachments";
+import {
+  ALLOWED_MIME,
+  attachmentMime,
+  attachmentMarkdown,
+  isImageMime,
+} from "@/lib/attachments";
 import {
   continuationFor,
   parseMarkdown,
@@ -86,6 +91,7 @@ import {
 } from "@/lib/share-targets";
 import { csvToMarkdown } from "@/lib/spreadsheet";
 import { Presence } from "./presence";
+import { AttachmentCard } from "./attachment-card";
 import { useNote, useNoteActions, useNoteAutosave } from "@/hooks/use-notes";
 const MarkdownPreview = dynamic(
   () => import("./markdown-preview").then((m) => m.MarkdownPreview),
@@ -428,16 +434,51 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       : next.length;
 
     for (const file of files) {
+      const mime = attachmentMime(file.type, file.name);
       const importedTable =
-        file.type === "text/csv" ? csvToMarkdown(await file.text()) : "";
-      const form = new FormData();
-      form.append("file", file);
+        mime === "text/csv" ? csvToMarkdown(await file.text()) : "";
 
       try {
-        const uploaded = await api<{ id: string; filename: string; mime: string }>(
+        const prepared = await api<
+          | { direct: false }
+          | {
+              direct: true;
+              attachment: { id: string; filename: string; mime: string };
+              uploadUrl: string;
+            }
+        >(
           `/api/notes/${note.id}/attachments`,
-          { method: "POST", body: form },
+          {
+            method: "POST",
+            body: JSON.stringify({
+              filename: file.name,
+              mime,
+              size: file.size,
+            }),
+          },
         );
+        let uploaded: { id: string; filename: string; mime: string };
+        if (prepared.direct) {
+          const response = await fetch(prepared.uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": mime },
+            body: file,
+          });
+          if (!response.ok) {
+            await fetch(`/api/attachments/${prepared.attachment.id}`, {
+              method: "DELETE",
+            });
+            throw new Error("Cloudflare R2 rejected the upload");
+          }
+          uploaded = prepared.attachment;
+        } else {
+          const form = new FormData();
+          form.append("file", file);
+          uploaded = await api<{ id: string; filename: string; mime: string }>(
+            `/api/notes/${note.id}/attachments`,
+            { method: "POST", body: form },
+          );
+        }
 
         // A picture wants a line of its own; a file can sit in the sentence.
         const snippet = attachmentMarkdown(uploaded);
@@ -1128,7 +1169,8 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       <div className="relative min-h-0 flex-1 border-t border-line">
         {mode === "write" ? (
           <>
-            {parseMarkdown(content).some((block) => block.type === "table") ? (
+            {parseMarkdown(content).some((block) => block.type === "table") ||
+            ATTACHMENT_MARKDOWN.test(content) ? (
               <HybridWriteEditor
                 source={content}
                 activeRef={textareaRef}
@@ -1307,11 +1349,55 @@ function sourceOffset(field: HTMLTextAreaElement) {
 type HybridSegment =
   | { type: "text"; value: string; start: number; end: number }
   | {
+      type: "attachment";
+      id: string;
+      filename: string;
+      start: number;
+      end: number;
+    }
+  | {
       type: "table";
       line: number;
       headers: string[];
       rows: string[][];
     };
+
+const ATTACHMENT_MARKDOWN =
+  /!?\[([^\]\n]*)\]\(\/api\/attachments\/([\w-]+)\)/;
+
+function splitAttachments(segment: Extract<HybridSegment, { type: "text" }>) {
+  const pattern = new RegExp(ATTACHMENT_MARKDOWN.source, "g");
+  const parts: HybridSegment[] = [];
+  let cursor = 0;
+  for (const match of segment.value.matchAll(pattern)) {
+    const localStart = match.index ?? 0;
+    if (localStart > cursor) {
+      parts.push({
+        type: "text",
+        value: segment.value.slice(cursor, localStart),
+        start: segment.start + cursor,
+        end: segment.start + localStart,
+      });
+    }
+    parts.push({
+      type: "attachment",
+      filename: match[1] || "Attachment",
+      id: match[2],
+      start: segment.start + localStart,
+      end: segment.start + localStart + match[0].length,
+    });
+    cursor = localStart + match[0].length;
+  }
+  if (cursor < segment.value.length) {
+    parts.push({
+      type: "text",
+      value: segment.value.slice(cursor),
+      start: segment.start + cursor,
+      end: segment.end,
+    });
+  }
+  return parts.length ? parts : [segment];
+}
 
 function hybridSegments(source: string): HybridSegment[] {
   const lines = source.split("\n");
@@ -1353,7 +1439,9 @@ function hybridSegments(source: string): HybridSegment[] {
       end: source.length,
     });
   }
-  return segments;
+  return segments.flatMap((segment) =>
+    segment.type === "text" ? splitAttachments(segment) : segment,
+  );
 }
 
 function HybridWriteEditor({
@@ -1389,6 +1477,18 @@ function HybridWriteEditor({
               }
             />
           </div>
+        ) : segment.type === "attachment" ? (
+          <div key={`attachment-${segment.id}-${index}`} className="px-4">
+            <AttachmentCard
+              id={segment.id}
+              filename={segment.filename}
+              onRemove={() =>
+                onChange(
+                  `${source.slice(0, segment.start)}${source.slice(segment.end)}`,
+                )
+              }
+            />
+          </div>
         ) : (
           <textarea
             key={`text-${index}`}
@@ -1402,7 +1502,11 @@ function HybridWriteEditor({
             }}
             data-source-offset={segment.start}
             value={segment.value}
-            rows={Math.max(3, segment.value.split("\n").length)}
+            rows={
+              segment.value
+                ? Math.max(1, segment.value.split("\n").length)
+                : 3
+            }
             onFocus={(event) => {
               activeRef.current = event.currentTarget;
             }}
@@ -1435,7 +1539,7 @@ function HybridWriteEditor({
             }}
             placeholder={index === 0 ? "Start writing... markdown works here" : "Continue writing…"}
             spellCheck={false}
-            className="field block min-h-[72px] w-full resize-none overflow-hidden bg-transparent px-4 py-2 leading-[1.75] text-foreground"
+            className="field block min-h-[36px] w-full resize-none overflow-hidden bg-transparent px-4 py-2 leading-[1.75] text-foreground"
           />
         ),
       )}

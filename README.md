@@ -252,6 +252,10 @@ cp .env.example .env.local
 | `AUTH_GOOGLE_SECRET` | no | Same |
 | `RESEND_API_KEY` | no | Sends password-reset and confirmation email. Without it the links are logged to the server console instead, so the flow still works locally |
 | `EMAIL_FROM` | no | Defaults to Resend's onboarding sender |
+| `R2_ACCOUNT_ID` | no | Cloudflare account ID; enables private R2 attachment storage when all four R2 values are set |
+| `R2_ACCESS_KEY_ID` | no | From an R2 Object Read & Write API token scoped to the attachment bucket |
+| `R2_SECRET_ACCESS_KEY` | no | The token's secret; server-only |
+| `R2_BUCKET_NAME` | no | Private bucket used for original attachment objects |
 | `VAPID_PUBLIC_KEY` | no | Reminders. Generate a pair with `npx web-push generate-vapid-keys` |
 | `VAPID_PRIVATE_KEY` | no | The other half of that pair |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | no | The public key again, this time where the browser can read it |
@@ -261,6 +265,34 @@ cp .env.example .env.local
 
 Leave the Google variables unset and the "Continue with Google" button simply
 doesn't render — email/password still works.
+
+### Cloudflare R2 attachments
+
+Create a private R2 bucket, then in **Storage & databases → R2 → Manage API
+tokens** create an Object Read & Write token scoped only to that bucket. Put the
+account ID, access key ID, secret access key and bucket name into the four `R2_*`
+variables above. The app uses R2's S3-compatible endpoint with region `auto`.
+
+Objects remain private. Uploads use a 15-minute presigned `PUT` URL so videos do
+not pass through the application server; reads stream through
+`/api/attachments/[id]`, where note/share authorization is enforced. Add this
+CORS policy to the bucket, replacing the origins with the app's real addresses:
+
+```json
+[
+  {
+    "AllowedOrigins": ["http://localhost:3000", "https://your-app.example"],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+The bucket itself stays private and needs no custom domain. Without complete R2
+credentials, local development falls back to Postgres and keeps the smaller
+5 MB limit.
 
 For Google sign-in, add `http://localhost:3000/api/auth/callback/google` as an
 authorized redirect URI on the OAuth client (and your production URL when you deploy).
@@ -276,6 +308,8 @@ far has been additive: `notes.deletedAt`, `notes.dueAt` and `events.noteId` for
 trash, due dates and note-to-event links, then the `noteVersion`, `noteShare`
 and `attachment` tables for history, sharing and files, then `events.recurrence`
 and the `pushSubscription` table for repeats and reminders.
+Attachment storage later added `storageKey` and made the legacy `data` column
+nullable, so run `npm run db:push` when adopting R2.
 
 `db:push` finishes by running `db:extras`, which adds what a Drizzle schema
 cannot describe — today that is the GIN index behind full-text search, built
@@ -391,11 +425,13 @@ write its own rows. The two routes a signed-out visitor can reach, a shared note
 and the images inside one, take the share token in place of a session and check
 that it names the note being asked for.
 
-Files are stored in Postgres as `bytea` rather than in object storage: no second
-service to configure, no signed URLs to expire, and an attachment is removed by
-the same cascade that removes its note. The 5 MB cap is what keeps that
-reasonable. The driver disagreement about what a `bytea` looks like in
-JavaScript is settled in `src/db/schema.ts`, which sends and reads it as hex.
+Attachment metadata stays in Postgres. Original bytes use a private Cloudflare
+R2 bucket when configured, with Postgres `bytea` retained as a 5 MB local
+fallback and for files uploaded before R2 was enabled. R2 reads are proxied
+through the authenticated attachment route, and deleting an attachment, note or
+account also removes its object. The driver disagreement about what a `bytea`
+looks like in JavaScript is settled in `src/db/schema.ts`, which sends and reads
+legacy bytes as hex.
 
 The note list is paginated with a cursor and filtered, searched and ordered in
 SQL, so a filtered view shows every match rather than only the ones that happened

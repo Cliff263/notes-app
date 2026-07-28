@@ -1,12 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { events, notes } from "@/db/schema";
+import { attachments, events, notes } from "@/db/schema";
 import {
   linkedEventDescription,
   linkedEventTitle,
   moveLinkedEvent,
 } from "@/lib/note-event-sync";
 import { serializeNote } from "@/lib/serialize";
+import { deleteObjects } from "@/lib/object-storage";
 import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
 import { recordVersion } from "@/lib/versions";
 
@@ -144,12 +145,19 @@ export async function DELETE(request: Request, { params }: Params) {
     const permanent = new URL(request.url).searchParams.get("permanent") === "true";
 
     if (permanent) {
+      const stored = await db
+        .select({ storageKey: attachments.storageKey })
+        .from(attachments)
+        .where(
+          and(eq(attachments.noteId, id), eq(attachments.userId, userId)),
+        );
       const [row] = await db
         .delete(notes)
         .where(and(eq(notes.id, id), eq(notes.userId, userId)))
         .returning({ id: notes.id });
 
       if (!row) return Response.json({ error: "Note not found" }, { status: 404 });
+      await deleteObjects(stored.map((item) => item.storageKey));
       return Response.json({ ok: true, permanent: true });
     }
 

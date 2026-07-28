@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   attachmentIdFrom,
+  attachmentKind,
   attachmentMarkdown,
+  attachmentMime,
   formatBytes,
   isAllowedMime,
   isImageMime,
@@ -29,6 +31,7 @@ describe("the allowlist", () => {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       ),
     ).toBe(true);
+    expect(isAllowedMime("video/mp4")).toBe(true);
   });
 
   it("refuses anything a browser might run", () => {
@@ -41,6 +44,29 @@ describe("the allowlist", () => {
   it("does not mistake an inherited property for an allowed type", () => {
     expect(isAllowedMime("constructor")).toBe(false);
     expect(isAllowedMime("toString")).toBe(false);
+  });
+});
+
+describe("attachment metadata", () => {
+  it("recovers a safe MIME type from a filename when the browser omits it", () => {
+    expect(attachmentMime("", "budget.xlsx")).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(attachmentMime("", "clip.mp4")).toBe("video/mp4");
+    expect(attachmentMime("application/octet-stream", "resume.pdf")).toBe(
+      "application/pdf",
+    );
+  });
+
+  it("uses human-readable file kinds", () => {
+    expect(attachmentKind("application/pdf", "cv.pdf")).toBe("PDF");
+    expect(attachmentKind("video/mp4", "intro.mp4")).toBe("Video");
+    expect(
+      attachmentKind(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "cv.docx",
+      ),
+    ).toBe("Document");
   });
 });
 

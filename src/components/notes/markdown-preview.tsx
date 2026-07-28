@@ -3,9 +3,11 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { Check, Columns3, Download, Plus, Rows3, X } from "lucide-react";
 import { Fragment } from "react";
+import { attachmentIdFrom } from "@/lib/attachments";
 import { parseMarkdown, type Inline } from "@/lib/markdown";
 import { tableToCsv } from "@/lib/spreadsheet";
 import { cn } from "@/lib/utils";
+import { AttachmentCard } from "./attachment-card";
 
 export type WikiLinkTarget = { id: string; title: string } | undefined;
 
@@ -428,7 +430,18 @@ function InlineRun({
               </button>
             );
           }
-          case "link":
+          case "link": {
+            const attachmentId = attachmentIdFrom(node.href);
+            if (attachmentId) {
+              return (
+                <AttachmentCard
+                  key={index}
+                  id={attachmentId}
+                  filename={node.value}
+                  shareToken={shareToken}
+                />
+              );
+            }
             return (
               <a
                 key={index}
@@ -440,6 +453,7 @@ function InlineRun({
                 {node.value}
               </a>
             );
+          }
           default:
             return <Fragment key={index}>{node.value}</Fragment>;
         }

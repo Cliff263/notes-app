@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { notes } from "@/db/schema";
+import { attachments, notes } from "@/db/schema";
+import { deleteObjects } from "@/lib/object-storage";
 import { serializeNote } from "@/lib/serialize";
 import { requireUserId, UnauthorizedError, unauthorized } from "@/lib/session";
 
@@ -34,11 +35,28 @@ export async function POST(request: Request) {
     }
 
     if (action === "emptyTrash") {
+      const doomed = await db
+        .select({ id: notes.id })
+        .from(notes)
+        .where(and(eq(notes.userId, userId), isNotNull(notes.deletedAt)));
+      const doomedIds = doomed.map((note) => note.id);
+      const stored = doomedIds.length
+        ? await db
+            .select({ storageKey: attachments.storageKey })
+            .from(attachments)
+            .where(
+              and(
+                eq(attachments.userId, userId),
+                inArray(attachments.noteId, doomedIds),
+              ),
+            )
+        : [];
       const removed = await db
         .delete(notes)
         .where(and(eq(notes.userId, userId), isNotNull(notes.deletedAt)))
         .returning({ id: notes.id });
 
+      await deleteObjects(stored.map((item) => item.storageKey));
       return Response.json({ ok: true, removed: removed.map((row) => row.id) });
     }
 
@@ -50,7 +68,17 @@ export async function POST(request: Request) {
     const scope = and(eq(notes.userId, userId), inArray(notes.id, ids));
 
     if (action === "purge") {
+      const stored = await db
+        .select({ storageKey: attachments.storageKey })
+        .from(attachments)
+        .where(
+          and(
+            eq(attachments.userId, userId),
+            inArray(attachments.noteId, ids),
+          ),
+        );
       const removed = await db.delete(notes).where(scope).returning({ id: notes.id });
+      await deleteObjects(stored.map((item) => item.storageKey));
       return Response.json({ ok: true, removed: removed.map((row) => row.id) });
     }
 

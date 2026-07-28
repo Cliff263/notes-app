@@ -282,7 +282,10 @@ export const attachments = pgTable(
     filename: text("filename").notNull(),
     mime: text("mime").notNull(),
     size: integer("size").notNull(),
-    data: bytea("data").notNull(),
+    /** R2 object key in production; null for legacy/database-backed files. */
+    storageKey: text("storageKey"),
+    /** Local-development fallback and storage for attachments uploaded pre-R2. */
+    data: bytea("data"),
     createdAt: timestamp("createdAt", { mode: "date", withTimezone: true })
       .notNull()
       .defaultNow(),
