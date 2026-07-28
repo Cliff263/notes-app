@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useShare, useShareActions } from "@/hooks/use-note-history";
+import { emailShareUrl, whatsappShareUrl } from "@/lib/share-targets";
 import { SHARE_DURATIONS } from "@/lib/types";
 import { cn, longDateTime } from "@/lib/utils";
 
@@ -28,11 +29,13 @@ export function ShareDialog({
   title,
   open,
   onClose,
+  onPrint,
 }: {
   noteId: string;
   title: string;
   open: boolean;
   onClose: () => void;
+  onPrint: () => void;
 }) {
   const reduced = useReducedMotion();
   const { data: share, isPending } = useShare(noteId, open);
@@ -55,40 +58,15 @@ export function ShareDialog({
 
   function email() {
     if (!share) return;
-    const noteTitle = title || "Untitled note";
-    const subject = encodeURIComponent(`Nexora note: ${noteTitle}`);
-    const body = encodeURIComponent(
-      `Read “${noteTitle}” on Nexora:\n\n${share.url}`,
-    );
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    window.location.href = emailShareUrl(title, share.url);
   }
 
   function whatsapp() {
     if (!share) return;
-    const noteTitle = title || "Untitled note";
-    const message = encodeURIComponent(
-      `Read “${noteTitle}” on Nexora:\n${share.url}`,
-    );
     window.open(
-      `https://wa.me/?text=${message}`,
+      whatsappShareUrl(title, share.url),
       "_blank",
       "noopener,noreferrer",
-    );
-  }
-
-  function print() {
-    if (!share) return;
-    const printWindow = window.open(share.url, "_blank");
-    if (!printWindow) return;
-
-    printWindow.opener = null;
-    printWindow.addEventListener(
-      "load",
-      () => {
-        printWindow.focus();
-        printWindow.print();
-      },
-      { once: true },
     );
   }
 
@@ -144,7 +122,7 @@ export function ShareDialog({
                       label="WhatsApp"
                       onClick={whatsapp}
                     />
-                    <ShareAction icon={Printer} label="Print" onClick={print} />
+                    <ShareAction icon={Printer} label="Print" onClick={onPrint} />
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -198,6 +176,11 @@ export function ShareDialog({
                 </>
               ) : (
                 <>
+                  <ShareAction
+                    icon={Printer}
+                    label="Print preview"
+                    onClick={onPrint}
+                  />
                   <p className="text-[12px] leading-relaxed text-muted">
                     Create a link that anyone can open, with no account needed.
                     You can withdraw it at any time.

@@ -67,6 +67,10 @@ export function useShareActions(id: string) {
   return {
     share: (duration: string, allowEdit: boolean) =>
       create.mutate({ duration, allowEdit }),
+    createShare: (duration: string, allowEdit: boolean) =>
+      create
+        .mutateAsync({ duration, allowEdit })
+        .then((data) => data.share),
     revoke: () => revoke.mutate(),
     working: create.isPending || revoke.isPending,
   };

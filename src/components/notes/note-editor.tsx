@@ -9,6 +9,7 @@ import {
   Braces,
   CalendarClock,
   CalendarPlus,
+  Check,
   ChevronLeft,
   ChevronRight,
   Code,
@@ -24,15 +25,20 @@ import {
   Heading2,
   History,
   Italic,
+  Mail,
+  MessageCircle,
   Paperclip,
   Link as LinkIcon,
   List as ListIcon,
   ListChecks,
   ListOrdered,
+  Loader2,
   MoreHorizontal,
   PenLine,
   Pin,
+  Printer,
   Quote,
+  Share2,
   Star,
   Trash2,
   X,
@@ -60,7 +66,12 @@ import { Stagger, StaggerItem } from "@/components/motion";
 import { useEvents, useEventActions } from "@/hooks/use-events";
 import { useCollab } from "@/hooks/use-collab";
 import { useBacklinks, useNoteTitles } from "@/hooks/use-note-links";
-import { useShare } from "@/hooks/use-note-history";
+import {
+  useShare,
+  useShareActions,
+  type Share,
+} from "@/hooks/use-note-history";
+import { emailShareUrl, whatsappShareUrl } from "@/lib/share-targets";
 import { Presence } from "./presence";
 import { useNote, useNoteActions, useNoteAutosave } from "@/hooks/use-notes";
 const MarkdownPreview = dynamic(
@@ -79,6 +90,10 @@ const HistorySheet = dynamic(
 const ShareDialog = dynamic(() => import("./share-dialog").then((m) => m.ShareDialog), {
   ssr: false,
 });
+const PrintPreview = dynamic(
+  () => import("./print-preview").then((m) => m.PrintPreview),
+  { ssr: false },
+);
 import { useNotesStore } from "@/store/notes-store";
 
 export function NoteEditor() {
@@ -168,10 +183,15 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const [tagDraft, setTagDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [mode, setMode] = useState<"write" | "preview">("write");
   const [scheduling, setScheduling] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [preparedShare, setPreparedShare] = useState<Share | null>(null);
+  const [sharePreparing, setSharePreparing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -186,7 +206,14 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
    * Whether this note is shared, and on what terms. Two small columns, cached
    * for a minute — the cost of knowing whether to open a peer connection.
    */
-  const { data: share } = useShare(note.id, true);
+  const {
+    data: share,
+    isPending: sharePending,
+    refetch: refetchShare,
+  } = useShare(note.id, true);
+  const { createShare } = useShareActions(note.id);
+  const shareCreation = useRef<Promise<Share> | null>(null);
+  const activeShare = share ?? preparedShare;
 
   /** Someone else's edit: take their text, and carry our caret across it. */
   const onRemoteText = useCallback(
@@ -236,6 +263,73 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const dueLocal = note.dueAt ? toLocalInputValue(note.dueAt) : "";
   const menuRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  function openShareSetup() {
+    setMenuOpen(false);
+    setShareOpen(true);
+  }
+
+  function copyShareLink() {
+    if (!activeShare) return;
+    void navigator.clipboard.writeText(activeShare.url).then(() => {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1800);
+    }, openShareSetup);
+  }
+
+  async function getShareTarget() {
+    if (activeShare) return activeShare;
+
+    // Do not replace a link just because its initial lookup was still in
+    // flight when the user opened the menu.
+    if (sharePending) {
+      const existing = await refetchShare();
+      if (existing.data) return existing.data;
+    }
+
+    if (!shareCreation.current) {
+      shareCreation.current = createShare("forever", false).finally(() => {
+        shareCreation.current = null;
+      });
+    }
+    return shareCreation.current;
+  }
+
+  async function prepareShareTarget() {
+    if (activeShare || sharePreparing) return;
+    setSharePreparing(true);
+    try {
+      setPreparedShare(await getShareTarget());
+    } catch {
+      setUploadError("Could not prepare sharing");
+    } finally {
+      setSharePreparing(false);
+    }
+  }
+
+  function shareByEmail() {
+    if (!activeShare) return;
+    setMenuOpen(false);
+    // This navigation happens synchronously inside the trusted click, which is
+    // required by browsers before they will launch an external mail handler.
+    window.location.href = emailShareUrl(note.title, activeShare.url);
+  }
+
+  function shareByWhatsApp() {
+    if (!activeShare) return;
+    setMenuOpen(false);
+    window.open(
+      whatsappShareUrl(note.title, activeShare.url),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
+  function openPrintPreview() {
+    setMenuOpen(false);
+    setShareOpen(false);
+    setPrintOpen(true);
+  }
 
   /** Wraps the selection, or drops the markers in place for typing between. */
   function wrapSelection(before: string, after: string) {
@@ -584,14 +678,76 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                   )}
                 </AnimatePresence>
 
-                <MenuItem
-                  icon={Globe}
-                  label="Share a link"
+                <button
+                  type="button"
                   onClick={() => {
-                    setMenuOpen(false);
-                    setShareOpen(true);
+                    const next = !shareMenuOpen;
+                    setShareMenuOpen(next);
+                    if (next) void prepareShareTarget();
                   }}
-                />
+                  aria-expanded={shareMenuOpen}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-muted transition hover:bg-card-hover hover:text-foreground"
+                >
+                  <Share2 className="size-3.5" />
+                  <span className="flex-1 text-left">Share</span>
+                  <ChevronRight
+                    className={cn("size-3 transition", shareMenuOpen && "rotate-90")}
+                  />
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {shareMenuOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.16 }}
+                      className="overflow-hidden border-y border-line bg-panel"
+                    >
+                      {sharePreparing && (
+                        <p className="flex items-center gap-2 px-3 py-2 text-[11px] text-muted-2">
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Preparing secure link…
+                        </p>
+                      )}
+                      <MenuItem
+                        icon={shareCopied ? Check : LinkIcon}
+                        label={shareCopied ? "Link copied" : "Copy link"}
+                        indent
+                        disabled={!activeShare}
+                        onClick={copyShareLink}
+                      />
+                      <MenuItem
+                        icon={MessageCircle}
+                        label="WhatsApp"
+                        indent
+                        disabled={!activeShare}
+                        onClick={shareByWhatsApp}
+                      />
+                      <MenuItem
+                        icon={Mail}
+                        label="Email"
+                        indent
+                        disabled={!activeShare}
+                        onClick={shareByEmail}
+                      />
+                      <MenuItem
+                        icon={Printer}
+                        label="Print preview"
+                        indent
+                        onClick={openPrintPreview}
+                      />
+                      {activeShare && (
+                        <MenuItem
+                          icon={Globe}
+                          label="Manage link"
+                          indent
+                          onClick={openShareSetup}
+                        />
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 <MenuItem
                   icon={History}
                   label="Version history"
@@ -1008,6 +1164,16 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
           title={note.title}
           open={shareOpen}
           onClose={() => setShareOpen(false)}
+          onPrint={openPrintPreview}
+        />
+      )}
+
+      {printOpen && (
+        <PrintPreview
+          note={note}
+          content={content}
+          open={printOpen}
+          onClose={() => setPrintOpen(false)}
         />
       )}
     </motion.div>
@@ -1072,19 +1238,22 @@ function MenuItem({
   onClick,
   danger,
   indent,
+  disabled,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   onClick: () => void;
   danger?: boolean;
   indent?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "flex w-full items-center gap-2 py-2 text-[12px] transition hover:bg-card-hover",
+        "flex w-full items-center gap-2 py-2 text-[12px] transition hover:bg-card-hover disabled:pointer-events-none disabled:opacity-40",
         indent ? "pl-7 pr-3" : "px-3",
         danger ? "text-muted hover:text-danger" : "text-muted hover:text-foreground",
       )}

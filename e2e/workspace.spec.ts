@@ -62,6 +62,23 @@ test.describe("filtering happens in the database", () => {
 });
 
 test.describe("editing", () => {
+  test("share options include a private print preview", async ({ page }) => {
+    await openNote(page, "Weekend Trip Ideas");
+    await page.getByLabel("More actions").click();
+    await page.getByRole("button", { name: "Share", exact: true }).click();
+
+    await expect(page.getByRole("button", { name: "Copy link" })).toBeEnabled({
+      timeout: 20_000,
+    });
+    await expect(page.getByRole("button", { name: "WhatsApp" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Email" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Print preview" }).click();
+    await expect(page.getByRole("heading", { name: "Print preview" })).toBeVisible();
+    await expect(page.locator("[data-print-preview]")).toContainText("Weekend Trip Ideas");
+    await expect(page.getByRole("button", { name: "Print", exact: true })).toBeVisible();
+  });
+
   test("a title edit survives a reload", async ({ page }) => {
     await openNote(page, "Weekend Trip Ideas");
 
