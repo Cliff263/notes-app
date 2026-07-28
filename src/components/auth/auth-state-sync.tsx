@@ -16,6 +16,8 @@ const PUBLIC_ROUTES = ["/login", "/signup", "/forgot", "/reset/", "/verify/", "/
  */
 export function AuthStateSync() {
   const { data: session, status } = useSession();
+  const synchronizedStatus = useAuthStore((state) => state.status);
+  const synchronizedUserId = useAuthStore((state) => state.user?.id ?? null);
   const queryClient = useQueryClient();
   const pathname = usePathname();
   const router = useRouter();
@@ -23,24 +25,30 @@ export function AuthStateSync() {
 
   useEffect(() => {
     useAuthStore.getState().syncSession(session, status);
+  }, [session, status]);
 
-    if (status === "loading") return;
+  useEffect(() => {
+    if (synchronizedStatus === "loading") return;
 
-    const userId = session?.user?.id ?? null;
-    if (previousUserId.current !== undefined && previousUserId.current !== userId) {
+    if (
+      previousUserId.current !== undefined &&
+      previousUserId.current !== synchronizedUserId
+    ) {
       queryClient.clear();
       useNotesStore.getState().reset();
     }
-    previousUserId.current = userId;
-  }, [queryClient, session, status]);
+    previousUserId.current = synchronizedUserId;
+  }, [queryClient, synchronizedStatus, synchronizedUserId]);
 
   useEffect(() => {
-    if (status !== "unauthenticated") return;
+    if (synchronizedStatus !== "unauthenticated") return;
     if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) return;
 
     const callbackUrl = `${pathname}${window.location.search}`;
-    router.replace(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
-  }, [pathname, router, status]);
+    router.replace(
+      `/login?reason=session_expired&callbackUrl=${encodeURIComponent(callbackUrl)}`,
+    );
+  }, [pathname, router, synchronizedStatus]);
 
   return null;
 }

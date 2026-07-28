@@ -1,5 +1,9 @@
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
+import {
+  SESSION_IDLE_MAX_AGE_SECONDS,
+  SESSION_REFRESH_SECONDS,
+} from "@/lib/session-policy";
 
 export const googleEnabled = Boolean(
   process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
@@ -23,7 +27,11 @@ export const authConfig = {
         }),
       ]
     : [],
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    maxAge: SESSION_IDLE_MAX_AGE_SECONDS,
+    updateAge: SESSION_REFRESH_SECONDS,
+  },
   pages: { signIn: "/login", error: "/login" },
   /*
    * Without this, Auth.js refuses to run behind any host it can't verify and

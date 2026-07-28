@@ -7,6 +7,7 @@ import { MotionProvider } from "@/components/motion/motion-provider";
 import { QueryProvider } from "@/components/query-provider";
 import { RealtimeSync } from "@/components/realtime-sync";
 import { ThemeProvider } from "@/components/theme-provider";
+import { SESSION_REFRESH_SECONDS } from "@/lib/session-policy";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -74,7 +75,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full">
         <SessionProvider
-          refetchInterval={5 * 60}
+          refetchInterval={SESSION_REFRESH_SECONDS}
           refetchOnWindowFocus
           refetchWhenOffline={false}
         >

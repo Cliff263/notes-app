@@ -1,7 +1,10 @@
 "use client";
 
 import { queueRequest } from "./outbox";
-import { refreshAuthSession } from "@/store/auth-store";
+import {
+  logoutInvalidSession,
+  refreshAuthSession,
+} from "@/store/auth-store";
 import { publishMutation } from "./realtime";
 
 export class ApiError extends Error {
@@ -40,15 +43,20 @@ export async function api<T>(
 
     // A sleeping tab can hold an older client session even though Auth.js can
     // still refresh its cookie. Revalidate once and retry the original request.
+    // If Auth.js has no session, or the API rejects the refreshed session too,
+    // clear the stale workspace and sign out. The retry is the recovery path;
+    // logout is only the terminal fallback.
     if (response.status === 401) {
+      let session = null;
       try {
-        const session = await refreshAuthSession();
+        session = await refreshAuthSession();
         if (session) response = await fetchRequest();
       } catch {
-        // Preserve the original 401 if session revalidation itself is
-        // unavailable; React Query can surface it without misclassifying it as
-        // an offline write.
+        // A failed session check cannot establish that the rejected credentials
+        // are usable, so it follows the same terminal path below.
       }
+
+      if (!session || response.status === 401) void logoutInvalidSession();
     }
   } catch (error) {
     if (queueWhenOffline && typeof request.body === "string") {
