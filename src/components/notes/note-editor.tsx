@@ -42,6 +42,8 @@ import {
   Star,
   Table2,
   Trash2,
+  Redo2,
+  Undo2,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -187,16 +189,92 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
    * The component is keyed by note id, so switching notes starts a fresh draft.
    */
   const [content, setContent] = useState(note.content);
+  const contentRef = useRef(note.content);
+  const undoStackRef = useRef<string[]>([]);
+  const redoStackRef = useRef<string[]>([]);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  function writeContent(next: string) {
+  function writeContent(
+    next: string,
+    change: "typing" | "structural" | "history" = "structural",
+  ) {
+    const current = contentRef.current;
+    if (next === current) return;
+
+    if (change !== "history") {
+      const continuesTyping =
+        change === "typing" && typingTimerRef.current !== null;
+      if (!continuesTyping) {
+        undoStackRef.current.push(current);
+        if (undoStackRef.current.length > 100) undoStackRef.current.shift();
+      }
+      redoStackRef.current = [];
+      setCanUndo(undoStackRef.current.length > 0);
+      setCanRedo(false);
+
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      typingTimerRef.current =
+        change === "typing"
+          ? setTimeout(() => {
+              typingTimerRef.current = null;
+            }, 900)
+          : null;
+    }
+
+    contentRef.current = next;
     setContent(next);
     updateNote(note.id, { content: next });
     // A no-op unless this note is in a room with someone. `collab` is declared
     // below; this is a hoisted function declaration, so it only reads it when
     // called, which is always after that point.
     collab.publish(next);
+  }
+
+  function restoreCaret(globalCaret: number) {
+    requestAnimationFrame(() => {
+      const field = textareaRef.current;
+      if (!field) return;
+      const localCaret = Math.max(
+        0,
+        Math.min(field.value.length, globalCaret - sourceOffset(field)),
+      );
+      field.focus();
+      field.setSelectionRange(localCaret, localCaret);
+    });
+  }
+
+  function undoContent() {
+    const previous = undoStackRef.current.pop();
+    if (previous === undefined) return;
+    const field = textareaRef.current;
+    const caret = field
+      ? sourceOffset(field) + field.selectionStart
+      : previous.length;
+    redoStackRef.current.push(contentRef.current);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = null;
+    writeContent(previous, "history");
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(true);
+    restoreCaret(Math.min(caret, previous.length));
+  }
+
+  function redoContent() {
+    const next = redoStackRef.current.pop();
+    if (next === undefined) return;
+    const field = textareaRef.current;
+    const caret = field ? sourceOffset(field) + field.selectionStart : next.length;
+    undoStackRef.current.push(contentRef.current);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = null;
+    writeContent(next, "history");
+    setCanUndo(true);
+    setCanRedo(redoStackRef.current.length > 0);
+    restoreCaret(Math.min(caret, next.length));
   }
 
   const [tagDraft, setTagDraft] = useState("");
@@ -247,6 +325,11 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
       const caret = field ? moveCaret(field.selectionStart) : 0;
 
       setContent(next);
+      contentRef.current = next;
+      redoStackRef.current = [];
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+      setCanRedo(false);
       // The cache follows too, so the card list and the counts stay honest.
       updateNote(note.id, { content: next }, 0);
 
@@ -417,6 +500,43 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     });
   }
 
+  /** Tab indents like a document editor; Shift+Tab removes one indent level. */
+  function changeIndent(field: HTMLTextAreaElement, outdent: boolean) {
+    const offset = sourceOffset(field);
+    const start = offset + field.selectionStart;
+    const end = offset + field.selectionEnd;
+    const value = contentRef.current;
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+    const nextBreak = value.indexOf("\n", end);
+    const lineEnd = nextBreak === -1 ? value.length : nextBreak;
+    const selectedLines = value.slice(lineStart, lineEnd).split("\n");
+    const indent = "    ";
+    const updated = selectedLines
+      .map((line) =>
+        outdent ? line.replace(/^(?: {1,4}|\t)/, "") : `${indent}${line}`,
+      )
+      .join("\n");
+
+    writeContent(
+      `${value.slice(0, lineStart)}${updated}${value.slice(lineEnd)}`,
+      "structural",
+    );
+
+    const removedFromFirst = outdent
+      ? selectedLines[0].length - updated.split("\n")[0].length
+      : 0;
+    const localStart = Math.max(
+      0,
+      field.selectionStart + (outdent ? -removedFromFirst : indent.length),
+    );
+    const lengthChange = updated.length - (lineEnd - lineStart);
+    const localEnd = Math.max(localStart, field.selectionEnd + lengthChange);
+    requestAnimationFrame(() => {
+      field.focus();
+      field.setSelectionRange(localStart, localEnd);
+    });
+  }
+
   /**
    * Uploads a dropped, pasted or chosen file and drops the markdown for it in
    * at the caret. Files go to the note they were dropped on, so deleting the
@@ -570,6 +690,52 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
         setLinkMenu(null);
         return;
       }
+    }
+
+    const primary = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+
+    if (primary) {
+      // Clipboard, cut and select-all remain native browser/OS operations.
+      if (["c", "v", "x", "a"].includes(key)) return;
+
+      if (key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoContent();
+        else undoContent();
+        return;
+      }
+      if (key === "y") {
+        event.preventDefault();
+        redoContent();
+        return;
+      }
+      if (key === "b") {
+        event.preventDefault();
+        wrapSelection("**", "**");
+        return;
+      }
+      if (key === "i") {
+        event.preventDefault();
+        wrapSelection("*", "*");
+        return;
+      }
+      if (key === "k") {
+        event.preventDefault();
+        wrapSelection("[", "](url)");
+        return;
+      }
+      if (key === "s") {
+        // Notes already autosave; suppress the browser's Save Page dialog.
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (event.key === "Tab") {
+      event.preventDefault();
+      changeIndent(event.currentTarget, event.shiftKey);
+      return;
     }
 
     if (event.key !== "Enter" || event.shiftKey) return;
@@ -1101,10 +1267,25 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
 
       {mode === "write" && (
         <div className="mt-2.5 flex flex-wrap items-center gap-0.5 border-t border-line px-3 pt-2">
-          <FormatButton label="Bold" onClick={() => wrapSelection("**", "**")}>
+          <FormatButton
+            label="Undo (Ctrl/Cmd+Z)"
+            disabled={!canUndo}
+            onClick={undoContent}
+          >
+            <Undo2 className="size-3.5" />
+          </FormatButton>
+          <FormatButton
+            label="Redo (Ctrl/Cmd+Y)"
+            disabled={!canRedo}
+            onClick={redoContent}
+          >
+            <Redo2 className="size-3.5" />
+          </FormatButton>
+          <span className="mx-1 h-5 w-px bg-line" />
+          <FormatButton label="Bold (Ctrl/Cmd+B)" onClick={() => wrapSelection("**", "**")}>
             <Bold className="size-3.5" />
           </FormatButton>
-          <FormatButton label="Italic" onClick={() => wrapSelection("*", "*")}>
+          <FormatButton label="Italic (Ctrl/Cmd+I)" onClick={() => wrapSelection("*", "*")}>
             <Italic className="size-3.5" />
           </FormatButton>
           <FormatButton label="Heading" onClick={() => prefixLine("## ")}>
@@ -1186,7 +1367,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                 data-source-offset="0"
                 value={content}
                 onChange={(event) => {
-                  writeContent(event.target.value);
+                  writeContent(event.target.value, "typing");
                   syncLinkMenu(event.currentTarget);
                 }}
                 onKeyUp={(event) => syncLinkMenu(event.currentTarget)}
@@ -1313,6 +1494,13 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
           open={historyOpen}
           onClose={() => setHistoryOpen(false)}
           onRestore={(version) => {
+            contentRef.current = version.content;
+            undoStackRef.current = [];
+            redoStackRef.current = [];
+            if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+            typingTimerRef.current = null;
+            setCanUndo(false);
+            setCanRedo(false);
             setContent(version.content);
             updateNote(note.id, { title: version.title, content: version.content }, 0);
             setHistoryOpen(false);
@@ -1455,7 +1643,10 @@ function HybridWriteEditor({
 }: {
   source: string;
   activeRef: React.RefObject<HTMLTextAreaElement | null>;
-  onChange: (source: string) => void;
+  onChange: (
+    source: string,
+    change?: "typing" | "structural" | "history",
+  ) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onSyncLinks: (field: HTMLTextAreaElement) => void;
   onBlur: () => void;
@@ -1473,6 +1664,7 @@ function HybridWriteEditor({
               onChangeTable={(_line, previousRows, headers, rows) =>
                 onChange(
                   replaceTable(source, segment.line, previousRows, headers, rows),
+                  "typing",
                 )
               }
             />
@@ -1485,6 +1677,7 @@ function HybridWriteEditor({
               onRemove={() =>
                 onChange(
                   `${source.slice(0, segment.start)}${source.slice(segment.end)}`,
+                  "structural",
                 )
               }
             />
@@ -1515,6 +1708,7 @@ function HybridWriteEditor({
                 `${source.slice(0, segment.start)}${event.target.value}${source.slice(
                   segment.end,
                 )}`,
+                "typing",
               );
               onSyncLinks(event.currentTarget);
             }}
@@ -1550,10 +1744,12 @@ function HybridWriteEditor({
 function FormatButton({
   label,
   onClick,
+  disabled,
   children,
 }: {
   label: string;
   onClick: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -1562,7 +1758,8 @@ function FormatButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="flex size-8 items-center justify-center rounded-md text-muted-2 transition hover:bg-card-hover hover:text-foreground"
+      disabled={disabled}
+      className="flex size-8 items-center justify-center rounded-md text-muted-2 transition hover:bg-card-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
     >
       {children}
     </button>

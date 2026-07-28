@@ -51,7 +51,7 @@ export function MarkdownPreview({
   }
 
   return (
-    <div className="space-y-3 text-[13px] leading-[1.75]">
+    <div className="space-y-3 whitespace-pre-wrap text-[13px] leading-[1.75]">
       {blocks.map((block, index) => {
         switch (block.type) {
           case "heading": {

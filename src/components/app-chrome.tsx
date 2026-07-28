@@ -52,17 +52,19 @@ function Chrome() {
     let goTimer: ReturnType<typeof setTimeout> | null = null;
 
     function onKeyDown(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setPaletteOpen((value) => !value);
-        return;
-      }
-
       const target = event.target as HTMLElement | null;
       const typing =
         target?.tagName === "INPUT" ||
         target?.tagName === "TEXTAREA" ||
         target?.isContentEditable;
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        // Inside an editor Ctrl/Cmd+K belongs to the link command.
+        if (typing) return;
+        event.preventDefault();
+        setPaletteOpen((value) => !value);
+        return;
+      }
 
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
