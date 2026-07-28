@@ -71,7 +71,11 @@ import {
   useShareActions,
   type Share,
 } from "@/hooks/use-note-history";
-import { emailShareUrl, whatsappShareUrl } from "@/lib/share-targets";
+import {
+  SHARE_FILE_FORMATS,
+  shareNoteFile,
+  type ShareFileFormat,
+} from "@/lib/share-targets";
 import { Presence } from "./presence";
 import { useNote, useNoteActions, useNoteAutosave } from "@/hooks/use-notes";
 const MarkdownPreview = dynamic(
@@ -192,6 +196,12 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
   const [shareCopied, setShareCopied] = useState(false);
   const [preparedShare, setPreparedShare] = useState<Share | null>(null);
   const [sharePreparing, setSharePreparing] = useState(false);
+  const [shareFileFormat, setShareFileFormat] =
+    useState<ShareFileFormat>("pdf");
+  const [fileSharing, setFileSharing] = useState<"email" | "whatsapp" | null>(
+    null,
+  );
+  const [shareFileMessage, setShareFileMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -269,12 +279,19 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     setShareOpen(true);
   }
 
-  function copyShareLink() {
-    if (!activeShare) return;
-    void navigator.clipboard.writeText(activeShare.url).then(() => {
+  async function copyShareLink() {
+    setSharePreparing(true);
+    try {
+      const target = await getShareTarget();
+      setPreparedShare(target);
+      await navigator.clipboard.writeText(target.url);
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 1800);
-    }, openShareSetup);
+    } catch {
+      openShareSetup();
+    } finally {
+      setSharePreparing(false);
+    }
   }
 
   async function getShareTarget() {
@@ -295,34 +312,22 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
     return shareCreation.current;
   }
 
-  async function prepareShareTarget() {
-    if (activeShare || sharePreparing) return;
-    setSharePreparing(true);
+  async function shareFile(target: "email" | "whatsapp") {
+    setFileSharing(target);
+    setShareFileMessage(null);
     try {
-      setPreparedShare(await getShareTarget());
+      const result = await shareNoteFile(note.id, note.title, shareFileFormat);
+      if (result === "shared") {
+        setMenuOpen(false);
+        setShareMenuOpen(false);
+      } else if (result === "downloaded") {
+        setShareFileMessage("File downloaded because native sharing is unavailable.");
+      }
     } catch {
-      setUploadError("Could not prepare sharing");
+      setShareFileMessage("Could not prepare the file.");
     } finally {
-      setSharePreparing(false);
+      setFileSharing(null);
     }
-  }
-
-  function shareByEmail() {
-    if (!activeShare) return;
-    setMenuOpen(false);
-    // This navigation happens synchronously inside the trusted click, which is
-    // required by browsers before they will launch an external mail handler.
-    window.location.href = emailShareUrl(note.title, activeShare.url);
-  }
-
-  function shareByWhatsApp() {
-    if (!activeShare) return;
-    setMenuOpen(false);
-    window.open(
-      whatsappShareUrl(note.title, activeShare.url),
-      "_blank",
-      "noopener,noreferrer",
-    );
   }
 
   function openPrintPreview() {
@@ -681,9 +686,7 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                 <button
                   type="button"
                   onClick={() => {
-                    const next = !shareMenuOpen;
-                    setShareMenuOpen(next);
-                    if (next) void prepareShareTarget();
+                    setShareMenuOpen((open) => !open);
                   }}
                   aria-expanded={shareMenuOpen}
                   className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-muted transition hover:bg-card-hover hover:text-foreground"
@@ -714,23 +717,54 @@ function EditorBody({ note, sheet }: { note: Note; sheet?: boolean }) {
                         icon={shareCopied ? Check : LinkIcon}
                         label={shareCopied ? "Link copied" : "Copy link"}
                         indent
-                        disabled={!activeShare}
-                        onClick={copyShareLink}
+                        disabled={sharePreparing}
+                        onClick={() => void copyShareLink()}
+                      />
+                      <div className="flex items-center gap-1 px-3 py-1.5 pl-7">
+                        {SHARE_FILE_FORMATS.map((format) => (
+                          <button
+                            key={format.value}
+                            type="button"
+                            onClick={() => setShareFileFormat(format.value)}
+                            className={cn(
+                              "rounded border px-1.5 py-0.5 text-[9px] transition",
+                              shareFileFormat === format.value
+                                ? "border-transparent bg-btn text-btn-foreground"
+                                : "border-line text-muted-2 hover:text-foreground",
+                            )}
+                          >
+                            {format.label}
+                          </button>
+                        ))}
+                      </div>
+                      <MenuItem
+                        icon={fileSharing === "whatsapp" ? Loader2 : MessageCircle}
+                        label={
+                          fileSharing === "whatsapp"
+                            ? "Preparing file…"
+                            : "WhatsApp"
+                        }
+                        indent
+                        disabled={fileSharing !== null}
+                        onClick={() => void shareFile("whatsapp")}
                       />
                       <MenuItem
-                        icon={MessageCircle}
-                        label="WhatsApp"
+                        icon={fileSharing === "email" ? Loader2 : Mail}
+                        label={
+                          fileSharing === "email" ? "Preparing file…" : "Email"
+                        }
                         indent
-                        disabled={!activeShare}
-                        onClick={shareByWhatsApp}
+                        disabled={fileSharing !== null}
+                        onClick={() => void shareFile("email")}
                       />
-                      <MenuItem
-                        icon={Mail}
-                        label="Email"
-                        indent
-                        disabled={!activeShare}
-                        onClick={shareByEmail}
-                      />
+                      {shareFileMessage && (
+                        <p
+                          role="status"
+                          className="px-3 py-1.5 pl-7 text-[10px] leading-relaxed text-muted-2"
+                        >
+                          {shareFileMessage}
+                        </p>
+                      )}
                       <MenuItem
                         icon={Printer}
                         label="Print preview"
